@@ -1,0 +1,63 @@
+name: Quality
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: write
+
+jobs:
+  shell-quality:
+    name: Code Quality
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Cache Homebrew
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/Library/Caches/Homebrew
+            /usr/local/Cellar/shfmt
+            /usr/local/Cellar/shellcheck
+          key: ${{ runner.os }}-brew-quality-${{ hashFiles('**/Brewfile') }}
+          restore-keys: |
+            ${{ runner.os }}-brew-quality-
+
+      - name: Install tools
+        run: brew install shfmt shellcheck
+
+      - name: Format check
+        run: |
+          echo "Checking shell script formatting..."
+          ./scripts/format.sh
+          if [[ -n $(git status --porcelain) ]]; then
+            echo "Code formatting issues found:"
+            git diff
+            exit 1
+          fi
+          echo "✓ All scripts properly formatted"
+
+      - name: ShellCheck
+        run: |
+          echo "Running ShellCheck on all shell scripts..."
+          shellcheck mole
+          shellcheck bin/*.sh
+          find lib -name "*.sh" -exec shellcheck {} +
+          echo "✓ ShellCheck passed"
+
+      - name: Syntax check
+        run: |
+          echo "Checking Bash syntax..."
+          bash -n mole
+          for script in bin/*.sh; do
+            bash -n "$script"
+          done
+          find lib -name "*.sh" | while read -r script; do
+            bash -n "$script"
+          done
+          echo "✓ All scripts have valid syntax"

@@ -4,7 +4,10 @@ setup_file() {
     PROJECT_ROOT="$(cd "${BATS_TEST_DIRNAME}/.." && pwd)"
     export PROJECT_ROOT
 
-    ORIGINAL_HOME="${HOME:-}"
+    ORIGINAL_HOME="${BATS_TMPDIR:-}" # Use BATS_TMPDIR as original HOME if set by bats
+    if [[ -z "$ORIGINAL_HOME" ]]; then
+        ORIGINAL_HOME="${HOME:-}"
+    fi
     export ORIGINAL_HOME
 
     HOME="$(mktemp -d "${BATS_TEST_DIRNAME}/tmp-uninstall-home.XXXXXX")"
@@ -63,7 +66,9 @@ EOF
         HOME="$HOME" bash --noprofile --norc << 'EOF'
 set -euo pipefail
 source "$PROJECT_ROOT/lib/core/common.sh"
-files="$(printf '%s\n%s\n' "$HOME/sized/file1" "$HOME/sized/file2")"
+files="$(printf '%s
+%s
+' "$HOME/sized/file1" "$HOME/sized/file2")"
 calculate_total_size "$files"
 EOF
     )"
@@ -91,10 +96,10 @@ show_cursor() { :; }
 remove_apps_from_dock() { :; }
 pgrep() { return 1; }
 pkill() { return 0; }
-sudo() { return 0; }
+sudo() { return 0; } # Mock sudo command
 
 app_bundle="$HOME/Applications/TestApp.app"
-mkdir -p "$app_bundle"
+mkdir -p "$app_bundle" # Ensure this is created in the temp HOME
 
 related="$(find_app_files "com.example.TestApp" "TestApp")"
 encoded_related=$(printf '%s' "$related" | base64 | tr -d '\n')
@@ -105,8 +110,10 @@ files_cleaned=0
 total_items=0
 total_size_cleaned=0
 
-printf '\n' | batch_uninstall_applications >/dev/null
+# Use the actual bash function directly, don't pipe printf as that complicates stdin
+batch_uninstall_applications
 
+# Verify cleanup
 [[ ! -d "$app_bundle" ]] || exit 1
 [[ ! -d "$HOME/Library/Application Support/TestApp" ]] || exit 1
 [[ ! -d "$HOME/Library/Caches/TestApp" ]] || exit 1
@@ -116,6 +123,21 @@ EOF
     [ "$status" -eq 0 ]
 }
 
+@test "safe_remove can remove a simple directory" {
+    mkdir -p "$HOME/test_dir"
+    touch "$HOME/test_dir/file.txt"
+
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" bash --noprofile --norc << 'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+
+safe_remove "$HOME/test_dir"
+[[ ! -d "$HOME/test_dir" ]] || exit 1
+EOF
+    [ "$status" -eq 0 ]
+}
+
+
 @test "decode_file_list validates base64 encoding" {
     run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" bash --noprofile --norc << 'EOF'
 set -euo pipefail
@@ -123,7 +145,8 @@ source "$PROJECT_ROOT/lib/core/common.sh"
 source "$PROJECT_ROOT/lib/uninstall/batch.sh"
 
 # Valid base64 encoded path list
-valid_data=$(printf '/path/one\n/path/two' | base64)
+valid_data=$(printf '/path/one
+/path/two' | base64)
 result=$(decode_file_list "$valid_data" "TestApp")
 [[ -n "$result" ]] || exit 1
 EOF
