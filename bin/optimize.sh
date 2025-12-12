@@ -2,6 +2,10 @@
 
 set -euo pipefail
 
+# Fix locale issues (Issue #83)
+export LC_ALL=C
+export LANG=C
+
 # Load common functions
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 source "$SCRIPT_DIR/lib/core/common.sh"
