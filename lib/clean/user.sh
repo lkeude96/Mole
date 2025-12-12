@@ -207,6 +207,12 @@ clean_application_support_logs() {
 
         [[ "$is_protected" == "true" ]] && continue
 
+        # Explicit safety check for System Settings / Login Items (Issue #122)
+        if [[ "$app_name" =~ backgroundtaskmanagement || "$app_name" =~ loginitems ]]; then
+             debug_log "Skipping critical system component: $app_name"
+             continue
+        fi
+
         # Clean log directories - simple direct removal without deep scanning
         [[ -d "$app_dir/log" ]] && safe_clean "$app_dir/log"/* "App logs: $app_name"
         [[ -d "$app_dir/logs" ]] && safe_clean "$app_dir/logs"/* "App logs: $app_name"
