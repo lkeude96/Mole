@@ -49,7 +49,7 @@ for char in s:
     else:
         width += 1
 print(width)
-" "$str" 2>/dev/null && return
+" "$str" 2> /dev/null && return
     fi
 
     # Fallback: Use wc with UTF-8 locale temporarily
@@ -60,8 +60,8 @@ print(width)
     export LANG=en_US.UTF-8
 
     local char_count byte_count width
-    char_count=$(printf '%s' "$str" | wc -m 2>/dev/null | tr -d ' ')
-    byte_count=$(printf '%s' "$str" | wc -c 2>/dev/null | tr -d ' ')
+    char_count=$(printf '%s' "$str" | wc -m 2> /dev/null | tr -d ' ')
+    byte_count=$(printf '%s' "$str" | wc -c 2> /dev/null | tr -d ' ')
 
     # Restore locale
     if [[ -n "$saved_lc_all" ]]; then
@@ -127,7 +127,7 @@ for char in s:
     width += char_width
 
 print(result + '...')
-" "$str" "$max_width" 2>/dev/null && return
+" "$str" "$max_width" 2> /dev/null && return
     fi
 
     # Fallback: Use UTF-8 locale for proper string handling

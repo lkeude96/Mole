@@ -253,7 +253,7 @@ get_brand_name() {
     # Detect if system primary language is Chinese
     local is_chinese=false
     local sys_lang
-    sys_lang=$(defaults read -g AppleLanguages 2>/dev/null | grep -o 'zh-Hans\|zh-Hant\|zh' | head -1 || echo "")
+    sys_lang=$(defaults read -g AppleLanguages 2> /dev/null | grep -o 'zh-Hans\|zh-Hant\|zh' | head -1 || echo "")
     [[ -n "$sys_lang" ]] && is_chinese=true
 
     # Return localized names based on system language
