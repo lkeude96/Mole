@@ -275,7 +275,7 @@ start_inline_spinner() {
         INLINE_SPINNER_PID=$!
         disown 2> /dev/null || true
     else
-        echo -n "  ${BLUE}|${NC} $message" >&2
+        echo -n "  ${BLUE}|${NC} $message" >&2 || true
     fi
 }
 
@@ -293,7 +293,7 @@ stop_inline_spinner() {
         wait "$INLINE_SPINNER_PID" 2> /dev/null || true
         INLINE_SPINNER_PID=""
         # Clear the line - use \033[2K to clear entire line, not just to end
-        [[ -t 1 ]] && printf "\r\033[2K" >&2
+        [[ -t 1 ]] && printf "\r\033[2K" >&2 || true
     fi
 }
 

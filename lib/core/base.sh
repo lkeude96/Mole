@@ -584,7 +584,7 @@ start_section_spinner() {
 stop_section_spinner() {
     stop_inline_spinner 2> /dev/null || true
     if [[ -t 1 ]]; then
-        echo -ne "\r\033[K" >&2
+        echo -ne "\r\033[K" >&2 || true
     fi
 }
 
