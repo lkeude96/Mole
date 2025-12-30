@@ -393,11 +393,11 @@ select_purge_categories() {
     _get_items_per_page() {
         local term_height=24
         if [[ -t 0 ]] || [[ -t 2 ]]; then
-            term_height=$(stty size </dev/tty 2>/dev/null | awk '{print $1}')
+            term_height=$(stty size < /dev/tty 2> /dev/null | awk '{print $1}')
         fi
         if [[ -z "$term_height" || $term_height -le 0 ]]; then
             if command -v tput > /dev/null 2>&1; then
-                term_height=$(tput lines 2>/dev/null || echo "24")
+                term_height=$(tput lines 2> /dev/null || echo "24")
             else
                 term_height=24
             fi
@@ -430,14 +430,14 @@ select_purge_categories() {
     done
     local original_stty=""
     if [[ -t 0 ]] && command -v stty > /dev/null 2>&1; then
-        original_stty=$(stty -g 2>/dev/null || echo "")
+        original_stty=$(stty -g 2> /dev/null || echo "")
     fi
     # Terminal control functions
     restore_terminal() {
         trap - EXIT INT TERM
         show_cursor
         if [[ -n "${original_stty:-}" ]]; then
-            stty "${original_stty}" 2>/dev/null || stty sane 2>/dev/null || true
+            stty "${original_stty}" 2> /dev/null || stty sane 2> /dev/null || true
         fi
     }
     # shellcheck disable=SC2329
@@ -508,7 +508,7 @@ select_purge_categories() {
     trap restore_terminal EXIT
     trap handle_interrupt INT TERM
     # Preserve interrupt character for Ctrl-C
-    stty -echo -icanon intr ^C 2>/dev/null || true
+    stty -echo -icanon intr ^C 2> /dev/null || true
     hide_cursor
     if [[ -t 1 ]]; then
         clear_screen
