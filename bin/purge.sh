@@ -63,12 +63,12 @@ start_purge() {
 perform_purge() {
     local stats_dir="${XDG_CACHE_HOME:-$HOME/.cache}/mole"
     local monitor_pid=""
-    
+
     # Cleanup function
     cleanup_monitor() {
         # Remove scanning file to stop monitor
         rm -f "$stats_dir/purge_scanning" 2> /dev/null || true
-        
+
         if [[ -n "$monitor_pid" ]]; then
             kill "$monitor_pid" 2> /dev/null || true
             wait "$monitor_pid" 2> /dev/null || true
@@ -77,45 +77,45 @@ perform_purge() {
             printf '\r\033[K\n\033[K\033[A'
         fi
     }
-    
+
     # Set up trap for cleanup
     trap cleanup_monitor INT TERM
-    
+
     # Show scanning with spinner on same line as title
     if [[ -t 1 ]]; then
         # Print title first
         printf '%s' "${PURPLE_BOLD}Purge Project Artifacts${NC} "
-        
+
         # Start background monitor with ASCII spinner
         (
             local spinner_chars="|/-\\"
             local spinner_idx=0
             local last_path=""
-            
+
             # Set up trap to exit cleanly
             trap 'exit 0' INT TERM
-            
+
             # Function to truncate path in the middle
             truncate_path() {
                 local path="$1"
                 local max_len=80
-                
+
                 if [[ ${#path} -le $max_len ]]; then
                     echo "$path"
                     return
                 fi
-                
+
                 # Calculate how much to show on each side
-                local side_len=$(( (max_len - 3) / 2 ))
+                local side_len=$(((max_len - 3) / 2))
                 local start="${path:0:$side_len}"
                 local end="${path: -$side_len}"
                 echo "${start}...${end}"
             }
-            
+
             while [[ -f "$stats_dir/purge_scanning" ]]; do
                 local current_path=$(cat "$stats_dir/purge_scanning" 2> /dev/null || echo "")
                 local display_path=""
-                
+
                 if [[ -n "$current_path" ]]; then
                     display_path="${current_path/#$HOME/~}"
                     display_path=$(truncate_path "$display_path")
@@ -123,11 +123,11 @@ perform_purge() {
                 elif [[ -n "$last_path" ]]; then
                     display_path="$last_path"
                 fi
-                
+
                 # Get current spinner character
                 local spin_char="${spinner_chars:$spinner_idx:1}"
-                spinner_idx=$(( (spinner_idx + 1) % ${#spinner_chars} ))
-                
+                spinner_idx=$(((spinner_idx + 1) % ${#spinner_chars}))
+
                 # Show title on first line, spinner and scanning info on second line
                 if [[ -n "$display_path" ]]; then
                     printf '\r%s\n%s %sScanning %s\033[K\033[A' \
@@ -140,7 +140,7 @@ perform_purge() {
                         "${BLUE}${spin_char}${NC}" \
                         "${GRAY}"
                 fi
-                
+
                 sleep 0.05
             done
             exit 0
@@ -149,14 +149,14 @@ perform_purge() {
     else
         echo -e "${PURPLE_BOLD}Purge Project Artifacts${NC}"
     fi
-    
+
     clean_project_artifacts
     local exit_code=$?
-    
+
     # Clean up
     trap - INT TERM
     cleanup_monitor
-    
+
     if [[ -t 1 ]]; then
         echo -e "${PURPLE_BOLD}Purge Project Artifacts${NC}"
     fi

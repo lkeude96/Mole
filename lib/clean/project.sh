@@ -375,7 +375,6 @@ scan_purge_targets() {
             while IFS= read -r item; do
                 # Check if we should abort (scanning file removed by Ctrl+C)
                 if [[ ! -f "$stats_dir/purge_scanning" ]]; then
-                    rm -f "$output_file.raw"
                     return
                 fi
 
@@ -413,7 +412,6 @@ scan_purge_targets() {
             while IFS= read -r item; do
                 # Check if we should abort (scanning file removed by Ctrl+C)
                 if [[ ! -f "$stats_dir/purge_scanning" ]]; then
-                    rm -f "$output_file.raw"
                     return
                 fi
 

@@ -203,7 +203,7 @@ func getScoreStyle(score int) lipgloss.Style {
 
 func buildCards(m MetricsSnapshot, _ int) []cardData {
 	cards := []cardData{
-		renderCPUCard(m.CPU),
+		renderCPUCard(m.CPU, m.Thermal),
 		renderMemoryCard(m.Memory),
 		renderDiskCard(m.Disks, m.DiskIO),
 		renderBatteryCard(m.Batteries, m.Thermal),
@@ -225,9 +225,18 @@ func hasSensorData(sensors []SensorReading) bool {
 	return false
 }
 
-func renderCPUCard(cpu CPUStatus) cardData {
+func renderCPUCard(cpu CPUStatus, thermal ThermalStatus) cardData {
 	var lines []string
-	lines = append(lines, fmt.Sprintf("Total  %s  %5.1f%%", progressBar(cpu.Usage), cpu.Usage))
+
+	// Line 1: Usage + Temp (Format: 15% @ 30.4°C)
+	usageBar := progressBar(cpu.Usage)
+
+	headerText := fmt.Sprintf("%5.1f%%", cpu.Usage)
+	if thermal.CPUTemp > 0 {
+		headerText += fmt.Sprintf(" @ %s°C", colorizeTemp(thermal.CPUTemp))
+	}
+
+	lines = append(lines, fmt.Sprintf("Total  %s  %s", usageBar, headerText))
 
 	if cpu.PerCoreEstimated {
 		lines = append(lines, subtleStyle.Render("Per-core data unavailable (using averaged load)"))
@@ -527,12 +536,7 @@ func renderBatteryCard(batts []BatteryStatus, thermal ThermalStatus) cardData {
 		}
 
 		if thermal.CPUTemp > 0 {
-			tempText := fmt.Sprintf("%.0f°C", thermal.CPUTemp)
-			if thermal.CPUTemp > 80 {
-				tempText = dangerStyle.Render(tempText)
-			} else if thermal.CPUTemp > 60 {
-				tempText = warnStyle.Render(tempText)
-			}
+			tempText := colorizeTemp(thermal.CPUTemp) + "°C" // Reuse common color logic
 			healthParts = append(healthParts, tempText)
 		}
 
@@ -641,12 +645,12 @@ func colorizeBattery(percent float64, s string) string {
 
 func colorizeTemp(t float64) string {
 	switch {
-	case t >= 85:
+	case t >= 76:
 		return dangerStyle.Render(fmt.Sprintf("%.1f", t))
-	case t >= 70:
+	case t >= 56:
 		return warnStyle.Render(fmt.Sprintf("%.1f", t))
 	default:
-		return subtleStyle.Render(fmt.Sprintf("%.1f", t))
+		return okStyle.Render(fmt.Sprintf("%.1f", t))
 	}
 }
 

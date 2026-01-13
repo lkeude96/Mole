@@ -260,11 +260,20 @@ get_user_home() {
 }
 
 get_invoking_user() {
-    if [[ -n "${SUDO_USER:-}" && "${SUDO_USER:-}" != "root" ]]; then
-        echo "$SUDO_USER"
+    if [[ -n "${_MOLE_INVOKING_USER_CACHE:-}" ]]; then
+        echo "$_MOLE_INVOKING_USER_CACHE"
         return 0
     fi
-    echo "${USER:-}"
+
+    local user
+    if [[ -n "${SUDO_USER:-}" && "${SUDO_USER:-}" != "root" ]]; then
+        user="$SUDO_USER"
+    else
+        user="${USER:-}"
+    fi
+
+    export _MOLE_INVOKING_USER_CACHE="$user"
+    echo "$user"
 }
 
 get_invoking_uid() {
