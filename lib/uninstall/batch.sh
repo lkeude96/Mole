@@ -373,15 +373,21 @@ batch_uninstall_applications() {
             if [[ "$is_brew_cask" == "true" && -n "$cask_name" ]]; then
                 # Use brew uninstall --cask with progress indicator
                 local brew_output_file=$(mktemp)
+                local brew_failed=false
                 if ! run_with_timeout 120 brew uninstall --cask "$cask_name" > "$brew_output_file" 2>&1; then
-                    # Fallback to manual removal if brew fails
+                    brew_failed=true
+                    log_warning "brew uninstall failed for $app_name, falling back to manual cleanup"
+                fi
+                rm -f "$brew_output_file"
+                if [[ "$brew_failed" == "true" ]]; then
+                    [[ -z "$related_files" ]] && related_files=$(find_app_files "$bundle_id" "$app_name")
+                    [[ -z "$system_files" ]] && system_files=$(find_app_system_files "$bundle_id" "$app_name")
                     if [[ "$needs_sudo" == true ]]; then
                         safe_sudo_remove "$app_path" || reason="remove failed"
                     else
                         safe_remove "$app_path" true || reason="remove failed"
                     fi
                 fi
-                rm -f "$brew_output_file"
             elif [[ "$needs_sudo" == true ]]; then
                 if ! safe_sudo_remove "$app_path"; then
                     local app_owner=$(get_file_owner "$app_path")

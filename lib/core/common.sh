@@ -177,9 +177,6 @@ remove_apps_from_dock() {
     local changed=false
     for target in "${targets[@]}"; do
         local app_path="$target"
-        local app_name
-        app_name=$(basename "$app_path" .app)
-
         # Normalize path for comparison - realpath might fail if app is already deleted
         local full_path
         full_path=$(cd "$(dirname "$app_path")" 2> /dev/null && pwd || echo "")
@@ -194,16 +191,14 @@ remove_apps_from_dock() {
 
             local url
             url=$(/usr/libexec/PlistBuddy -c "Print :persistent-apps:$i:tile-data:file-data:_CFURLString" "$plist" 2> /dev/null || echo "")
+            [[ -z "$url" ]] && { ((i++)); continue; }
 
-            # Match by label or by path (parsing the CFURLString which is usually a file:// URL)
-            if [[ "$label" == "$app_name" ]] || [[ "$url" == *"$app_name.app"* ]]; then
-                # Double check path if possible to avoid false positives for similarly named apps
-                if [[ -n "$full_path" && "$url" == *"$full_path"* ]] || [[ "$label" == "$app_name" ]]; then
-                    if /usr/libexec/PlistBuddy -c "Delete :persistent-apps:$i" "$plist" 2> /dev/null; then
-                        changed=true
-                        # After deletion, current index i now points to the next item
-                        continue
-                    fi
+            # Match by full path only to avoid removing apps with the same label.
+            if [[ -n "$full_path" && "$url" == *"$full_path"* ]]; then
+                if /usr/libexec/PlistBuddy -c "Delete :persistent-apps:$i" "$plist" 2> /dev/null; then
+                    changed=true
+                    # After deletion, current index i now points to the next item
+                    continue
                 fi
             fi
             ((i++))
