@@ -196,15 +196,15 @@ batch_uninstall_applications() {
         local exec_name=""
         local info_plist="$app_path/Contents/Info.plist"
         if [[ -e "$info_plist" ]]; then
-            exec_name=$(defaults read "$info_plist" CFBundleExecutable 2>/dev/null || echo "")
+            exec_name=$(defaults read "$info_plist" CFBundleExecutable 2> /dev/null || echo "")
         fi
-        if pgrep -qx "${exec_name:-$app_name}" 2>/dev/null; then
+        if pgrep -qx "${exec_name:-$app_name}" 2> /dev/null; then
             running_apps+=("$app_name")
         fi
 
         # Check if it's a Homebrew cask (only if app is symlinked from Caskroom)
         local cask_name="" is_brew_cask="false"
-        local resolved_path=$(readlink "$app_path" 2>/dev/null || echo "")
+        local resolved_path=$(readlink "$app_path" 2> /dev/null || echo "")
         if [[ "$resolved_path" == */Caskroom/* ]]; then
             # Extract cask name using bash parameter expansion (faster than sed)
             local tmp="${resolved_path#*/Caskroom/}"
