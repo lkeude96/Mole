@@ -724,42 +724,53 @@ EOF
     fi
 
     if [[ -t 0 ]]; then
-        echo -ne "${PURPLE}${ICON_ARROW}${NC} System caches need sudo — ${GREEN}Enter${NC} continue, ${GRAY}Space${NC} skip: "
-
-        local choice
-        choice=$(read_key)
-
-        # ESC/Q aborts, Space skips, Enter enables system cleanup.
-        if [[ "$choice" == "QUIT" ]]; then
-            echo -e " ${GRAY}Canceled${NC}"
-            exit 0
-        fi
-
-        if [[ "$choice" == "SPACE" ]]; then
-            echo -e " ${GRAY}Skipped${NC}"
+        if sudo -n true 2> /dev/null; then
+            SYSTEM_CLEAN=true
+            echo -e "${GREEN}${ICON_SUCCESS}${NC} Admin access already available"
             echo ""
-            SYSTEM_CLEAN=false
-        elif [[ "$choice" == "ENTER" ]]; then
-            printf "\r\033[K" # Clear the prompt line
-            if ensure_sudo_session "System cleanup requires admin access"; then
-                SYSTEM_CLEAN=true
-                echo -e "${GREEN}${ICON_SUCCESS}${NC} Admin access granted"
+        else
+            echo -ne "${PURPLE}${ICON_ARROW}${NC} System caches need sudo — ${GREEN}Enter${NC} continue, ${GRAY}Space${NC} skip: "
+
+            local choice
+            choice=$(read_key)
+
+            # ESC/Q aborts, Space skips, Enter enables system cleanup.
+            if [[ "$choice" == "QUIT" ]]; then
+                echo -e " ${GRAY}Canceled${NC}"
+                exit 0
+            fi
+
+            if [[ "$choice" == "SPACE" ]]; then
+                echo -e " ${GRAY}Skipped${NC}"
                 echo ""
+                SYSTEM_CLEAN=false
+            elif [[ "$choice" == "ENTER" ]]; then
+                printf "\r\033[K" # Clear the prompt line
+                if ensure_sudo_session "System cleanup requires admin access"; then
+                    SYSTEM_CLEAN=true
+                    echo -e "${GREEN}${ICON_SUCCESS}${NC} Admin access granted"
+                    echo ""
+                else
+                    SYSTEM_CLEAN=false
+                    echo ""
+                    echo -e "${YELLOW}Authentication failed${NC}, continuing with user-level cleanup"
+                fi
             else
                 SYSTEM_CLEAN=false
+                echo -e " ${GRAY}Skipped${NC}"
                 echo ""
-                echo -e "${YELLOW}Authentication failed${NC}, continuing with user-level cleanup"
             fi
-        else
-            SYSTEM_CLEAN=false
-            echo -e " ${GRAY}Skipped${NC}"
-            echo ""
         fi
     else
-        SYSTEM_CLEAN=false
         echo ""
         echo "Running in non-interactive mode"
-        echo "  ${ICON_LIST} System-level cleanup skipped (requires interaction)"
+        if sudo -n true 2> /dev/null; then
+            SYSTEM_CLEAN=true
+            echo "  ${ICON_LIST} System-level cleanup enabled (sudo session active)"
+        else
+            SYSTEM_CLEAN=false
+            echo "  ${ICON_LIST} System-level cleanup skipped (requires sudo)"
+        fi
         echo "  ${ICON_LIST} User-level cleanup will proceed automatically"
         echo ""
     fi
