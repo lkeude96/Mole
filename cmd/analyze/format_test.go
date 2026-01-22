@@ -310,6 +310,7 @@ func TestCalculateNameWidth(t *testing.T) {
 }
 
 func TestFormatUnusedTime(t *testing.T) {
+	now := time.Now().UTC()
 	tests := []struct {
 		name    string
 		daysAgo int
@@ -334,8 +335,8 @@ func TestFormatUnusedTime(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			var lastAccess time.Time
 			if tt.daysAgo >= 0 {
-				// Create a time that is tt.daysAgo days in the past
-				lastAccess = time.Now().AddDate(0, 0, -tt.daysAgo)
+				// Use a fixed UTC baseline to avoid DST-related flakiness.
+				lastAccess = now.Add(-time.Duration(tt.daysAgo) * 24 * time.Hour)
 			}
 			// If daysAgo < 0, lastAccess remains zero value
 
