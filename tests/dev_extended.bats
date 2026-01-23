@@ -149,3 +149,58 @@ EOF
     [ "$status" -eq 0 ]
     [[ "$output" != *"Rust toolchains"* ]]
 }
+
+@test "clean_dev_jetbrains_toolbox cleans old versions and bypasses toolbox whitelist" {
+    local toolbox_channel="$HOME/Library/Application Support/JetBrains/Toolbox/apps/IDEA/ch-0"
+    mkdir -p "$toolbox_channel/241.1" "$toolbox_channel/241.2" "$toolbox_channel/241.3"
+    ln -s "241.3" "$toolbox_channel/current"
+    touch -t 202401010000 "$toolbox_channel/241.1"
+    touch -t 202402010000 "$toolbox_channel/241.2"
+    touch -t 202403010000 "$toolbox_channel/241.3"
+
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/dev.sh"
+toolbox_root="$HOME/Library/Application Support/JetBrains/Toolbox/apps"
+WHITELIST_PATTERNS=("$toolbox_root"* "$HOME/Library/Application Support/JetBrains*")
+note_activity() { :; }
+safe_clean() {
+    local target="$1"
+    for pattern in "${WHITELIST_PATTERNS[@]+${WHITELIST_PATTERNS[@]}}"; do
+        if [[ "$pattern" == "$toolbox_root"* ]]; then
+            echo "WHITELIST_NOT_REMOVED"
+            exit 1
+        fi
+    done
+    echo "$target"
+}
+MOLE_JETBRAINS_TOOLBOX_KEEP=1
+clean_dev_jetbrains_toolbox
+EOF
+
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"/241.1"* ]]
+    [[ "$output" != *"/241.2"* ]]
+}
+
+@test "clean_dev_jetbrains_toolbox keeps current directory and removes older versions" {
+    local toolbox_channel="$HOME/Library/Application Support/JetBrains/Toolbox/apps/IDEA/ch-0"
+    mkdir -p "$toolbox_channel/241.1" "$toolbox_channel/241.2" "$toolbox_channel/current"
+    touch -t 202401010000 "$toolbox_channel/241.1"
+    touch -t 202402010000 "$toolbox_channel/241.2"
+
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/dev.sh"
+note_activity() { :; }
+safe_clean() { echo "$1"; }
+MOLE_JETBRAINS_TOOLBOX_KEEP=1
+clean_dev_jetbrains_toolbox
+EOF
+
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"/241.1"* ]]
+    [[ "$output" != *"/241.2"* ]]
+}

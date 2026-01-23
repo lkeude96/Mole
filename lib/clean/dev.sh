@@ -213,6 +213,103 @@ clean_dev_jvm() {
     safe_clean ~/.sbt/* "SBT cache"
     safe_clean ~/.ivy2/cache/* "Ivy cache"
 }
+# JetBrains Toolbox old IDE versions (keep current + recent backup).
+clean_dev_jetbrains_toolbox() {
+    local toolbox_root="$HOME/Library/Application Support/JetBrains/Toolbox/apps"
+    [[ -d "$toolbox_root" ]] || return 0
+
+    local keep_previous="${MOLE_JETBRAINS_TOOLBOX_KEEP:-1}"
+    if [[ ! "$keep_previous" =~ ^[0-9]+$ ]]; then
+        keep_previous=1
+    fi
+
+    local whitelist_overridden="false"
+    local -a original_whitelist=()
+    if [[ ${#WHITELIST_PATTERNS[@]} -gt 0 ]]; then
+        original_whitelist=("${WHITELIST_PATTERNS[@]}")
+        local -a filtered_whitelist=()
+        local pattern
+        for pattern in "${WHITELIST_PATTERNS[@]}"; do
+            if [[ "$toolbox_root" == $pattern || "$pattern" == "$toolbox_root"* ]]; then
+                continue
+            fi
+            filtered_whitelist+=("$pattern")
+        done
+        WHITELIST_PATTERNS=("${filtered_whitelist[@]+${filtered_whitelist[@]}}")
+        whitelist_overridden="true"
+    fi
+
+    local -a product_dirs=()
+    while IFS= read -r -d '' product_dir; do
+        product_dirs+=("$product_dir")
+    done < <(command find "$toolbox_root" -mindepth 1 -maxdepth 1 -type d -print0 2> /dev/null)
+
+    local product_dir
+    for product_dir in "${product_dirs[@]}"; do
+        while IFS= read -r -d '' channel_dir; do
+            local current_link=""
+            local current_real=""
+            if [[ -L "$channel_dir/current" ]]; then
+                current_link=$(readlink "$channel_dir/current" 2> /dev/null || true)
+                if [[ -n "$current_link" ]]; then
+                    if [[ "$current_link" == /* ]]; then
+                        current_real="$current_link"
+                    else
+                        current_real="$channel_dir/$current_link"
+                    fi
+                fi
+            elif [[ -d "$channel_dir/current" ]]; then
+                current_real="$channel_dir/current"
+            fi
+
+            local -a version_dirs=()
+            while IFS= read -r -d '' version_dir; do
+                local name
+                name=$(basename "$version_dir")
+
+                [[ "$name" == "current" ]] && continue
+                [[ "$name" == .* ]] && continue
+                [[ "$name" == "plugins" || "$name" == "plugins-lib" || "$name" == "plugins-libs" ]] && continue
+                [[ -n "$current_real" && "$version_dir" == "$current_real" ]] && continue
+                [[ ! "$name" =~ ^[0-9] ]] && continue
+
+                version_dirs+=("$version_dir")
+            done < <(command find "$channel_dir" -mindepth 1 -maxdepth 1 -type d -print0 2> /dev/null)
+
+            local -a sorted_dirs=()
+            while IFS= read -r line; do
+                local dir_path="${line#* }"
+                sorted_dirs+=("$dir_path")
+            done < <(
+                for version_dir in "${version_dirs[@]}"; do
+                    local mtime
+                    mtime=$(stat -f%m "$version_dir" 2> /dev/null || echo "0")
+                    printf '%s %s\n' "$mtime" "$version_dir"
+                done | sort -rn
+            )
+
+            if [[ ${#sorted_dirs[@]} -le "$keep_previous" ]]; then
+                continue
+            fi
+
+            local idx=0
+            local dir_path
+            for dir_path in "${sorted_dirs[@]}"; do
+                if [[ $idx -lt $keep_previous ]]; then
+                    ((idx++))
+                    continue
+                fi
+                safe_clean "$dir_path" "JetBrains Toolbox old IDE version"
+                note_activity
+                ((idx++))
+            done
+        done < <(command find "$product_dir" -mindepth 1 -maxdepth 1 -type d -name "ch-*" -print0 2> /dev/null)
+    done
+
+    if [[ "$whitelist_overridden" == "true" ]]; then
+        WHITELIST_PATTERNS=("${original_whitelist[@]}")
+    fi
+}
 # Other language tool caches.
 clean_dev_other_langs() {
     safe_clean ~/.bundle/cache/* "Ruby Bundler cache"
@@ -342,6 +439,7 @@ clean_developer_tools() {
     clean_project_caches
     clean_dev_mobile
     clean_dev_jvm
+    clean_dev_jetbrains_toolbox
     clean_dev_other_langs
     clean_dev_cicd
     clean_dev_database
