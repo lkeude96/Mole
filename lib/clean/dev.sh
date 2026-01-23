@@ -230,7 +230,7 @@ clean_dev_jetbrains_toolbox() {
         local -a filtered_whitelist=()
         local pattern
         for pattern in "${WHITELIST_PATTERNS[@]}"; do
-            if [[ "$toolbox_root" == $pattern || "$pattern" == "$toolbox_root"* ]]; then
+            if [[ "$toolbox_root" == "$pattern" || "$pattern" == "$toolbox_root"* ]]; then
                 continue
             fi
             filtered_whitelist+=("$pattern")
