@@ -247,14 +247,14 @@ update_mole() {
 
     if [[ -z "$latest" ]]; then
         log_error "Unable to check for updates. Check network connection."
-        echo -e "${YELLOW}Tip:${NC} Check if you can access GitHub (https://github.com)"
+        echo -e "${YELLOW}Tip:${NC} Check if you can access GitHub, https://github.com"
         echo -e "${YELLOW}Tip:${NC} Try again with: ${GRAY}mo update${NC}"
         exit 1
     fi
 
     if [[ "$VERSION" == "$latest" && "$force_update" != "true" ]]; then
         echo ""
-        echo -e "${GREEN}${ICON_SUCCESS}${NC} Already on latest version (${VERSION})"
+        echo -e "${GREEN}${ICON_SUCCESS}${NC} Already on latest version, ${VERSION}"
         echo ""
         exit 0
     fi
@@ -278,7 +278,7 @@ update_mole() {
             local curl_exit=$?
             if [[ -t 1 ]]; then stop_inline_spinner; fi
             rm -f "$tmp_installer"
-            log_error "Update failed (curl error: $curl_exit)"
+            log_error "Update failed, curl error: $curl_exit"
 
             case $curl_exit in
                 6) echo -e "${YELLOW}Tip:${NC} Could not resolve host. Check DNS or network connection." ;;
@@ -294,7 +294,7 @@ update_mole() {
         download_error=$(wget --timeout=10 --tries=3 -qO "$tmp_installer" "$installer_url" 2>&1) || {
             if [[ -t 1 ]]; then stop_inline_spinner; fi
             rm -f "$tmp_installer"
-            log_error "Update failed (wget error)"
+            log_error "Update failed, wget error"
             echo -e "${YELLOW}Tip:${NC} Check network connection and try again."
             echo -e "${YELLOW}Tip:${NC} URL: $installer_url"
             exit 1
@@ -324,7 +324,7 @@ update_mole() {
 
     if [[ "$requires_sudo" == "true" ]]; then
         if ! request_sudo_access "Mole update requires admin access"; then
-            log_error "Update aborted (admin access denied)"
+            log_error "Update aborted, admin access denied"
             rm -f "$tmp_installer"
             exit 1
         fi
@@ -349,14 +349,17 @@ update_mole() {
 
         if ! printf '%s\n' "$output" | grep -Eq "Updated to latest version|Already on latest version"; then
             local new_version
-            new_version=$(printf '%s\n' "$output" | sed -n 's/.*(version \([^)]*\)).*/\1/p' | head -1)
+            new_version=$(printf '%s\n' "$output" | sed -n 's/.*-> \([^[:space:]]\{1,\}\).*/\1/p' | head -1)
+            if [[ -z "$new_version" ]]; then
+                new_version=$(printf '%s\n' "$output" | sed -n 's/.*version[[:space:]]\{1,\}\([^[:space:]]\{1,\}\).*/\1/p' | head -1)
+            fi
             if [[ -z "$new_version" ]]; then
                 new_version=$("$mole_path" --version 2> /dev/null | awk 'NR==1 && NF {print $NF}' || echo "")
             fi
             if [[ -z "$new_version" ]]; then
                 new_version="$fallback_version"
             fi
-            printf '\n%s\n\n' "${GREEN}${ICON_SUCCESS}${NC} Updated to latest version (${new_version:-unknown})"
+            printf '\n%s\n\n' "${GREEN}${ICON_SUCCESS}${NC} Updated to latest version, ${new_version:-unknown}"
         else
             printf '\n'
         fi
@@ -484,15 +487,15 @@ remove_mole() {
         exit 0
     fi
 
-    echo -e "${YELLOW}Remove Mole${NC} - will delete the following:"
+    echo -e "${YELLOW}Remove Mole${NC}, will delete the following:"
     if [[ "$is_homebrew" == "true" ]]; then
-        echo "  - Mole via Homebrew"
+        echo "  * Mole via Homebrew"
     fi
     for install in ${manual_installs[@]+"${manual_installs[@]}"} ${alias_installs[@]+"${alias_installs[@]}"}; do
-        echo "  - $install"
+        echo "  * $install"
     done
-    echo "  - ~/.config/mole"
-    echo "  - ~/.cache/mole"
+    echo "  * ~/.config/mole"
+    echo "  * ~/.cache/mole"
     echo -ne "${PURPLE}${ICON_ARROW}${NC} Press ${GREEN}Enter${NC} to confirm, ${GRAY}ESC${NC} to cancel: "
 
     IFS= read -r -s -n1 key || key=""

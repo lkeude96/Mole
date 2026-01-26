@@ -687,7 +687,7 @@ update_progress_if_needed() {
     if [[ $((current_time - last_time)) -ge $interval ]]; then
         # Update the spinner with progress
         stop_section_spinner
-        start_section_spinner "Scanning items... ($completed/$total)"
+        start_section_spinner "Scanning items... $completed/$total"
 
         # Update the last_update_time variable
         eval "$last_update_var=$current_time"
@@ -717,7 +717,7 @@ push_spinner_state() {
     fi
 
     MOLE_SPINNER_STACK+=("$current_state")
-    debug_log "Pushed spinner state: $current_state (stack depth: ${#MOLE_SPINNER_STACK[@]})"
+    debug_log "Pushed spinner state: $current_state, stack depth: ${#MOLE_SPINNER_STACK[@]}"
 }
 
 # Pop and restore spinner state from stack
@@ -730,7 +730,7 @@ pop_spinner_state() {
 
     # Stack depth safety check
     if [[ ${#MOLE_SPINNER_STACK[@]} -gt 10 ]]; then
-        debug_log "Warning: Spinner stack depth excessive (${#MOLE_SPINNER_STACK[@]}), possible leak"
+        debug_log "Warning: Spinner stack depth excessive, ${#MOLE_SPINNER_STACK[@]}, possible leak"
     fi
 
     local last_idx=$((${#MOLE_SPINNER_STACK[@]} - 1))
@@ -745,7 +745,7 @@ pop_spinner_state() {
     done
     MOLE_SPINNER_STACK=("${new_stack[@]}")
 
-    debug_log "Popped spinner state: $state (remaining depth: ${#MOLE_SPINNER_STACK[@]})"
+    debug_log "Popped spinner state: $state, remaining depth: ${#MOLE_SPINNER_STACK[@]}"
 
     # Restore state if needed
     if [[ "$state" == running:* ]]; then
@@ -822,7 +822,7 @@ get_terminal_info() {
     local info="Terminal: ${TERM:-unknown}"
 
     if is_ansi_supported; then
-        info+=" (ANSI supported)"
+        info+=", ANSI supported"
 
         if command -v tput > /dev/null 2>&1; then
             local cols=$(tput cols 2> /dev/null || echo "?")
@@ -831,7 +831,7 @@ get_terminal_info() {
             info+=" ${cols}x${lines}, ${colors} colors"
         fi
     else
-        info+=" (ANSI not supported)"
+        info+=", ANSI not supported"
     fi
 
     echo "$info"
@@ -852,11 +852,11 @@ validate_terminal_environment() {
     # Check if running in a known problematic terminal
     case "${TERM:-}" in
         dumb)
-            log_warning "Running in 'dumb' terminal - limited functionality"
+            log_warning "Running in 'dumb' terminal, limited functionality"
             ((warnings++))
             ;;
         unknown)
-            log_warning "Terminal type unknown - may have display issues"
+            log_warning "Terminal type unknown, may have display issues"
             ((warnings++))
             ;;
     esac
@@ -865,7 +865,7 @@ validate_terminal_environment() {
     if command -v tput > /dev/null 2>&1; then
         local cols=$(tput cols 2> /dev/null || echo "80")
         if [[ "$cols" -lt 60 ]]; then
-            log_warning "Terminal width ($cols cols) is narrow - output may wrap"
+            log_warning "Terminal width, $cols cols, is narrow, output may wrap"
             ((warnings++))
         fi
     fi

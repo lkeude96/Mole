@@ -211,7 +211,7 @@ safe_remove() {
             MOLE_PERMISSION_DENIED_COUNT=${MOLE_PERMISSION_DENIED_COUNT:-0}
             MOLE_PERMISSION_DENIED_COUNT=$((MOLE_PERMISSION_DENIED_COUNT + 1))
             export MOLE_PERMISSION_DENIED_COUNT
-            debug_log "Permission denied: $path (may need Full Disk Access)"
+            debug_log "Permission denied: $path, may need Full Disk Access"
         else
             [[ "$silent" != "true" ]] && log_error "Failed to remove: $path"
         fi
@@ -267,20 +267,20 @@ safe_sudo_remove() {
                 fi
             fi
 
-            debug_file_action "[DRY RUN] Would remove (sudo)" "$path" "$file_size" "$file_age"
+            debug_file_action "[DRY RUN] Would remove, sudo" "$path" "$file_size" "$file_age"
         else
-            debug_log "[DRY RUN] Would remove (sudo): $path"
+            debug_log "[DRY RUN] Would remove, sudo: $path"
         fi
         return 0
     fi
 
-    debug_log "Removing (sudo): $path"
+    debug_log "Removing, sudo: $path"
 
     # Perform the deletion
     if sudo rm -rf "$path" 2> /dev/null; then # SAFE: safe_sudo_remove implementation
         return 0
     else
-        log_error "Failed to remove (sudo): $path"
+        log_error "Failed to remove, sudo: $path"
         return 1
     fi
 }
@@ -309,11 +309,11 @@ safe_find_delete() {
 
     # Validate type filter
     if [[ "$type_filter" != "f" && "$type_filter" != "d" ]]; then
-        log_error "Invalid type filter: $type_filter (must be 'f' or 'd')"
+        log_error "Invalid type filter: $type_filter, must be 'f' or 'd'"
         return 1
     fi
 
-    debug_log "Finding in $base_dir: $pattern (age: ${age_days}d, type: $type_filter)"
+    debug_log "Finding in $base_dir: $pattern, age: ${age_days}d, type: $type_filter"
 
     local find_args=("-maxdepth" "5" "-name" "$pattern" "-type" "$type_filter")
     if [[ "$age_days" -gt 0 ]]; then
@@ -340,7 +340,7 @@ safe_sudo_find_delete() {
 
     # Validate base directory (use sudo for permission-restricted dirs)
     if ! sudo test -d "$base_dir" 2> /dev/null; then
-        debug_log "Directory does not exist (skipping): $base_dir"
+        debug_log "Directory does not exist, skipping: $base_dir"
         return 0
     fi
 
@@ -351,11 +351,11 @@ safe_sudo_find_delete() {
 
     # Validate type filter
     if [[ "$type_filter" != "f" && "$type_filter" != "d" ]]; then
-        log_error "Invalid type filter: $type_filter (must be 'f' or 'd')"
+        log_error "Invalid type filter: $type_filter, must be 'f' or 'd'"
         return 1
     fi
 
-    debug_log "Finding (sudo) in $base_dir: $pattern (age: ${age_days}d, type: $type_filter)"
+    debug_log "Finding, sudo, in $base_dir: $pattern, age: ${age_days}d, type: $type_filter"
 
     local find_args=("-maxdepth" "5" "-name" "$pattern" "-type" "$type_filter")
     if [[ "$age_days" -gt 0 ]]; then

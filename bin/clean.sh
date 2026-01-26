@@ -381,7 +381,7 @@ safe_clean() {
         stop_section_spinner
     fi
 
-    debug_log "Cleaning: $description (${#existing_paths[@]} items)"
+    debug_log "Cleaning: $description, ${#existing_paths[@]} items"
 
     # Enhanced debug output with risk level and details
     if [[ "${MO_DEBUG:-}" == "1" && ${#existing_paths[@]} -gt 0 ]]; then
@@ -612,7 +612,7 @@ safe_clean() {
         debug_log "Permission denied while cleaning: $description"
     fi
     if [[ $removal_failed_count -gt 0 && "$DRY_RUN" != "true" ]]; then
-        debug_log "Skipped $removal_failed_count items (permission denied or in use) for: $description"
+        debug_log "Skipped $removal_failed_count items, permission denied or in use, for: $description"
     fi
 
     if [[ $removed_any -eq 1 ]]; then
@@ -627,7 +627,7 @@ safe_clean() {
         fi
 
         if [[ "$DRY_RUN" == "true" ]]; then
-            echo -e "  ${YELLOW}${ICON_DRY_RUN}${NC} $label ${YELLOW}($size_human dry)${NC}"
+            echo -e "  ${YELLOW}${ICON_DRY_RUN}${NC} $label${NC}, ${YELLOW}$size_human dry${NC}"
 
             local paths_temp=$(create_temp_file)
 
@@ -678,7 +678,7 @@ safe_clean() {
                 ' | while IFS='|' read -r display_path total_size child_count; do
                     local size_human=$(bytes_to_human "$((total_size * 1024))")
                     if [[ $child_count -gt 1 ]]; then
-                        echo "$display_path  # $size_human ($child_count items)" >> "$EXPORT_LIST_FILE"
+                        echo "$display_path  # $size_human, $child_count items" >> "$EXPORT_LIST_FILE"
                     else
                         echo "$display_path  # $size_human" >> "$EXPORT_LIST_FILE"
                     fi
@@ -687,7 +687,7 @@ safe_clean() {
                 rm -f "$paths_temp"
             fi
         else
-            echo -e "  ${GREEN}${ICON_SUCCESS}${NC} $label ${GREEN}($size_human)${NC}"
+            echo -e "  ${GREEN}${ICON_SUCCESS}${NC} $label${NC}, ${GREEN}$size_human${NC}"
         fi
         ((files_cleaned += total_count))
         ((total_size_cleaned += total_size_kb))
@@ -711,7 +711,7 @@ start_cleanup() {
     fi
 
     if [[ "$DRY_RUN" == "true" ]]; then
-        echo -e "${YELLOW}Dry Run Mode${NC} - Preview only, no deletions"
+        echo -e "${YELLOW}Dry Run Mode${NC}, Preview only, no deletions"
         echo ""
         SYSTEM_CLEAN=false
 
@@ -737,7 +737,7 @@ EOF
             echo -e "${GREEN}${ICON_SUCCESS}${NC} Admin access already available"
             echo ""
         else
-            echo -ne "${PURPLE}${ICON_ARROW}${NC} System caches need sudo — ${GREEN}Enter${NC} continue, ${GRAY}Space${NC} skip: "
+            echo -ne "${PURPLE}${ICON_ARROW}${NC} System caches need sudo. ${GREEN}Enter${NC} continue, ${GRAY}Space${NC} skip: "
 
             local choice
             choice=$(read_key)
@@ -774,10 +774,10 @@ EOF
         echo "Running in non-interactive mode"
         if sudo -n true 2> /dev/null; then
             SYSTEM_CLEAN=true
-            echo "  ${ICON_LIST} System-level cleanup enabled (sudo session active)"
+            echo "  ${ICON_LIST} System-level cleanup enabled, sudo session active"
         else
             SYSTEM_CLEAN=false
-            echo "  ${ICON_LIST} System-level cleanup skipped (requires sudo)"
+            echo "  ${ICON_LIST} System-level cleanup skipped, requires sudo"
         fi
         echo "  ${ICON_LIST} User-level cleanup will proceed automatically"
         echo ""
@@ -790,7 +790,7 @@ perform_cleanup() {
     if [[ "${MOLE_TEST_MODE:-0}" == "1" ]]; then
         test_mode_enabled=true
         if [[ "$DRY_RUN" == "true" ]]; then
-            echo -e "${YELLOW}Dry Run Mode${NC} - Preview only, no deletions"
+            echo -e "${YELLOW}Dry Run Mode${NC}, Preview only, no deletions"
             echo ""
         fi
         echo -e "${GREEN}${ICON_LIST}${NC} User app cache"
@@ -1054,7 +1054,7 @@ perform_cleanup() {
     else
         summary_status="info"
         if [[ "$DRY_RUN" == "true" ]]; then
-            summary_details+=("No significant reclaimable space detected (system already clean).")
+            summary_details+=("No significant reclaimable space detected, system already clean.")
         else
             summary_details+=("System was already clean; no additional space freed.")
         fi

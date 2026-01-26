@@ -46,9 +46,9 @@ clean_ds_store_tree() {
         local size_human
         size_human=$(bytes_to_human "$total_bytes")
         if [[ "$DRY_RUN" == "true" ]]; then
-            echo -e "  ${YELLOW}${ICON_DRY_RUN}${NC} $label ${YELLOW}($file_count files, $size_human dry)${NC}"
+            echo -e "  ${YELLOW}${ICON_DRY_RUN}${NC} $label${NC}, ${YELLOW}$file_count files, $size_human dry${NC}"
         else
-            echo -e "  ${GREEN}${ICON_SUCCESS}${NC} $label ${GREEN}($file_count files, $size_human)${NC}"
+            echo -e "  ${GREEN}${ICON_SUCCESS}${NC} $label${NC}, ${GREEN}$file_count files, $size_human${NC}"
         fi
         local size_kb=$(((total_bytes + 1023) / 1024))
         ((files_cleaned += file_count))
@@ -70,7 +70,7 @@ scan_installed_apps() {
         current_time=$(get_epoch_seconds)
         local age=$((current_time - cache_mtime))
         if [[ $age -lt $cache_age_seconds ]]; then
-            debug_log "Using cached app list (age: ${age}s)"
+            debug_log "Using cached app list, age: ${age}s"
             if [[ -r "$cache_file" ]] && [[ -s "$cache_file" ]]; then
                 if cat "$cache_file" > "$installed_bundles" 2> /dev/null; then
                     return 0
@@ -82,7 +82,7 @@ scan_installed_apps() {
             fi
         fi
     fi
-    debug_log "Scanning installed applications (cache expired or missing)"
+    debug_log "Scanning installed applications, cache expired or missing"
     local -a app_dirs=(
         "/Applications"
         "/System/Applications"
@@ -310,7 +310,7 @@ clean_orphaned_app_data() {
     stop_section_spinner
     if [[ $orphaned_count -gt 0 ]]; then
         local orphaned_mb=$(echo "$total_orphaned_kb" | awk '{printf "%.1f", $1/1024}')
-        echo "  ${GREEN}${ICON_SUCCESS}${NC} Cleaned $orphaned_count items (~${orphaned_mb}MB)"
+        echo "  ${GREEN}${ICON_SUCCESS}${NC} Cleaned $orphaned_count items, about ${orphaned_mb}MB"
         note_activity
     fi
     rm -f "$installed_bundles"
@@ -512,7 +512,7 @@ clean_orphaned_system_services() {
         else
             orphaned_kb_display="${total_orphaned_kb}KB"
         fi
-        echo -e "  ${GREEN}${ICON_SUCCESS}${NC} Cleaned $orphaned_count orphaned services (~$orphaned_kb_display)"
+        echo -e "  ${GREEN}${ICON_SUCCESS}${NC} Cleaned $orphaned_count orphaned services, about $orphaned_kb_display"
         note_activity
     fi
 

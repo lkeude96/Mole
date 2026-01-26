@@ -39,18 +39,18 @@ clean_deep_system() {
     if [[ -d "/macOS Install Data" ]]; then
         local mtime=$(get_file_mtime "/macOS Install Data")
         local age_days=$((($(get_epoch_seconds) - mtime) / 86400))
-        debug_log "Found macOS Install Data (age: ${age_days} days)"
+        debug_log "Found macOS Install Data, age ${age_days} days"
         if [[ $age_days -ge 30 ]]; then
             local size_kb=$(get_path_size_kb "/macOS Install Data")
             if [[ -n "$size_kb" && "$size_kb" -gt 0 ]]; then
                 local size_human=$(bytes_to_human "$((size_kb * 1024))")
-                debug_log "Cleaning macOS Install Data: $size_human (${age_days} days old)"
+                debug_log "Cleaning macOS Install Data: $size_human, ${age_days} days old"
                 if safe_sudo_remove "/macOS Install Data"; then
-                    log_success "macOS Install Data ($size_human)"
+                    log_success "macOS Install Data, $size_human"
                 fi
             fi
         else
-            debug_log "Keeping macOS Install Data (only ${age_days} days old, needs 30+)"
+            debug_log "Keeping macOS Install Data, only ${age_days} days old, needs 30+"
         fi
     fi
     start_section_spinner "Scanning system caches..."
@@ -70,13 +70,13 @@ clean_deep_system() {
             local current_time
             current_time=$(get_epoch_seconds)
             if [[ $((current_time - last_update_time)) -ge $update_interval ]]; then
-                start_section_spinner "Scanning system caches... ($found_count found)"
+                start_section_spinner "Scanning system caches... $found_count found"
                 last_update_time=$current_time
             fi
         fi
     done < <(run_with_timeout 5 command find /private/var/folders -type d -name "*.code_sign_clone" -path "*/X/*" -print0 2> /dev/null || true)
     stop_section_spinner
-    [[ $code_sign_cleaned -gt 0 ]] && log_success "Browser code signature caches ($code_sign_cleaned items)"
+    [[ $code_sign_cleaned -gt 0 ]] && log_success "Browser code signature caches, $code_sign_cleaned items"
 
     start_section_spinner "Cleaning system diagnostic logs..."
     local diag_cleaned=0
@@ -178,7 +178,7 @@ clean_time_machine_failed_backups() {
                 local backup_name=$(basename "$inprogress_file")
                 local size_human=$(bytes_to_human "$((size_kb * 1024))")
                 if [[ "$DRY_RUN" == "true" ]]; then
-                    echo -e "  ${YELLOW}${ICON_DRY_RUN}${NC} Incomplete backup: $backup_name ${YELLOW}($size_human dry)${NC}"
+                    echo -e "  ${YELLOW}${ICON_DRY_RUN}${NC} Incomplete backup: $backup_name${NC}, ${YELLOW}$size_human dry${NC}"
                     ((tm_cleaned++))
                     note_activity
                     continue
@@ -188,7 +188,7 @@ clean_time_machine_failed_backups() {
                     continue
                 fi
                 if tmutil delete "$inprogress_file" 2> /dev/null; then
-                    echo -e "  ${GREEN}${ICON_SUCCESS}${NC} Incomplete backup: $backup_name ${GREEN}($size_human)${NC}"
+                    echo -e "  ${GREEN}${ICON_SUCCESS}${NC} Incomplete backup: $backup_name${NC}, ${GREEN}$size_human${NC}"
                     ((tm_cleaned++))
                     ((files_cleaned++))
                     ((total_size_cleaned += size_kb))
@@ -224,7 +224,7 @@ clean_time_machine_failed_backups() {
                     local backup_name=$(basename "$inprogress_file")
                     local size_human=$(bytes_to_human "$((size_kb * 1024))")
                     if [[ "$DRY_RUN" == "true" ]]; then
-                        echo -e "  ${YELLOW}${ICON_DRY_RUN}${NC} Incomplete APFS backup in $bundle_name: $backup_name ${YELLOW}($size_human dry)${NC}"
+                        echo -e "  ${YELLOW}${ICON_DRY_RUN}${NC} Incomplete APFS backup in $bundle_name: $backup_name${NC}, ${YELLOW}$size_human dry${NC}"
                         ((tm_cleaned++))
                         note_activity
                         continue
@@ -233,7 +233,7 @@ clean_time_machine_failed_backups() {
                         continue
                     fi
                     if tmutil delete "$inprogress_file" 2> /dev/null; then
-                        echo -e "  ${GREEN}${ICON_SUCCESS}${NC} Incomplete APFS backup in $bundle_name: $backup_name ${GREEN}($size_human)${NC}"
+                        echo -e "  ${GREEN}${ICON_SUCCESS}${NC} Incomplete APFS backup in $bundle_name: $backup_name${NC}, ${GREEN}$size_human${NC}"
                         ((tm_cleaned++))
                         ((files_cleaned++))
                         ((total_size_cleaned += size_kb))

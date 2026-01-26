@@ -39,7 +39,7 @@ brew install mole
 curl -fsSL https://raw.githubusercontent.com/tw93/mole/main/install.sh | bash
 ```
 
-**Windows:** Mole is designed for macOS, but we offer an experimental Windows version based on user demand. See the [windows branch](https://github.com/tw93/Mole/tree/windows) — for early adopters only.
+**Windows:** Mole is designed for macOS, but we offer an experimental Windows version based on user demand. See the [windows branch](https://github.com/tw93/Mole/tree/windows), for early adopters only.
 
 **Run:**
 
@@ -210,7 +210,7 @@ Select Categories to Clean - 18.5GB (8 selected)
   ● backend-service    2.5GB | node_modules
 ```
 
-> **Use with caution:** This will permanently delete selected artifacts. Review carefully before confirming. Recent projects — less than 7 days old — are marked and unselected by default.
+> **Use with caution:** This will permanently delete selected artifacts. Review carefully before confirming. Recent projects, less than 7 days old, are marked and unselected by default.
 
 <details>
 <summary><strong>Custom Scan Paths</strong></summary>
@@ -282,4 +282,4 @@ Join thousands of users worldwide who trust Mole to keep their Macs clean and op
 
 ## License
 
-MIT License — feel free to enjoy and participate in open source.
+MIT License, feel free to enjoy and participate in open source.

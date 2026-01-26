@@ -594,7 +594,7 @@ func getDirectorySizeFromDuWithExclude(path string, excludePath string) (int64, 
 				return 0, fmt.Errorf("du timeout after %v", duTimeout)
 			}
 			if stderr.Len() > 0 {
-				return 0, fmt.Errorf("du failed: %v (%s)", err, stderr.String())
+				return 0, fmt.Errorf("du failed: %v, %s", err, stderr.String())
 			}
 			return 0, fmt.Errorf("du failed: %v", err)
 		}

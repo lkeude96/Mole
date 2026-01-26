@@ -138,10 +138,9 @@ debug_file_action() {
     local file_age="${4:-}"
 
     if [[ "${MO_DEBUG:-}" == "1" ]]; then
-        local msg="  - $file_path"
-        [[ -n "$file_size" ]] && msg+=" ($file_size"
+        local msg="  * $file_path"
+        [[ -n "$file_size" ]] && msg+=", $file_size"
         [[ -n "$file_age" ]] && msg+=", ${file_age} days old"
-        [[ -n "$file_size" ]] && msg+=")"
 
         # Output to stderr
         echo -e "${GRAY}[DEBUG] $action: $msg${NC}" >&2
@@ -165,10 +164,10 @@ debug_risk_level() {
         esac
 
         # Output to stderr with color
-        echo -e "${GRAY}[DEBUG] Risk Level: ${color}${risk_level}${GRAY} ($reason)${NC}" >&2
+        echo -e "${GRAY}[DEBUG] Risk Level: ${color}${risk_level}${GRAY}, $reason${NC}" >&2
 
         # Also log to file
-        echo "Risk Level: $risk_level ($reason)" >> "$DEBUG_LOG_FILE" 2> /dev/null || true
+        echo "Risk Level: $risk_level, $reason" >> "$DEBUG_LOG_FILE" 2> /dev/null || true
     fi
 }
 
@@ -187,16 +186,16 @@ log_system_info() {
     # Start block in debug log file
     {
         echo "----------------------------------------------------------------------"
-        echo "Mole Debug Session - $(date '+%Y-%m-%d %H:%M:%S')"
+        echo "Mole Debug Session, $(date '+%Y-%m-%d %H:%M:%S')"
         echo "----------------------------------------------------------------------"
         echo "User: $USER"
         echo "Hostname: $(hostname)"
         echo "Architecture: $(uname -m)"
         echo "Kernel: $(uname -r)"
         if command -v sw_vers > /dev/null; then
-            echo "macOS: $(sw_vers -productVersion) ($(sw_vers -buildVersion))"
+            echo "macOS: $(sw_vers -productVersion), $(sw_vers -buildVersion)"
         fi
-        echo "Shell: ${SHELL:-unknown} (${TERM:-unknown})"
+        echo "Shell: ${SHELL:-unknown}, ${TERM:-unknown}"
 
         # Check sudo status non-interactively
         if sudo -n true 2> /dev/null; then

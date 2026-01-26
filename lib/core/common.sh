@@ -81,7 +81,7 @@ update_via_homebrew() {
         installed_version=$(brew list --versions mole 2> /dev/null | awk '{print $2}')
         [[ -z "$installed_version" ]] && installed_version=$(mo --version 2> /dev/null | awk '/Mole version/ {print $3; exit}')
         echo ""
-        echo -e "${GREEN}${ICON_SUCCESS}${NC} Already on latest version (${installed_version:-$current_version})"
+        echo -e "${GREEN}${ICON_SUCCESS}${NC} Already on latest version, ${installed_version:-$current_version}"
         echo ""
     elif echo "$upgrade_output" | grep -q "Error:"; then
         log_error "Homebrew upgrade failed"
@@ -93,7 +93,7 @@ update_via_homebrew() {
         new_version=$(brew list --versions mole 2> /dev/null | awk '{print $2}')
         [[ -z "$new_version" ]] && new_version=$(mo --version 2> /dev/null | awk '/Mole version/ {print $3; exit}')
         echo ""
-        echo -e "${GREEN}${ICON_SUCCESS}${NC} Updated to latest version (${new_version:-$current_version})"
+        echo -e "${GREEN}${ICON_SUCCESS}${NC} Updated to latest version, ${new_version:-$current_version}"
         echo ""
     fi
 

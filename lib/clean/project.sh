@@ -606,7 +606,7 @@ select_purge_categories() {
         fi
 
         printf "%s\n" "$clear_line"
-        printf "%s${PURPLE_BOLD}Select Categories to Clean${NC}%s ${GRAY}- ${selected_gb}GB ($selected_count selected)${NC}\n" "$clear_line" "$scroll_indicator"
+        printf "%s${PURPLE_BOLD}Select Categories to Clean${NC}%s ${GRAY}, ${selected_gb}GB, ${selected_count} selected${NC}\n" "$clear_line" "$scroll_indicator"
         printf "%s\n" "$clear_line"
 
         IFS=',' read -r -a recent_flags <<< "${PURGE_RECENT_CATEGORIES:-}"
@@ -1135,7 +1135,7 @@ clean_project_artifacts() {
         fi
         if [[ -t 1 ]]; then
             stop_inline_spinner
-            echo -e "${GREEN}${ICON_SUCCESS}${NC} $project_path - $artifact_type ${GREEN}($size_human)${NC}"
+            echo -e "${GREEN}${ICON_SUCCESS}${NC} $project_path, $artifact_type${NC}, ${GREEN}$size_human${NC}"
         fi
     done
     # Update count

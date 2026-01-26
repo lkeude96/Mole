@@ -78,8 +78,8 @@ ask_for_updates
 EOF
 
     [ "$status" -eq 1 ]  # ESC cancels
-    [[ "$output" == *"Homebrew (5 updates)"* ]]
-    [[ "$output" == *"App Store (1 apps)"* ]]
+    [[ "$output" == *"Homebrew, 3 formula, 2 cask"* ]]
+    [[ "$output" == *"App Store, 1 apps"* ]]
     [[ "$output" == *"macOS system"* ]]
     [[ "$output" == *"Mole"* ]]
 }
@@ -253,24 +253,27 @@ process_install_output() {
 
     if ! printf '%s\n' "$output" | grep -Eq "Updated to latest version|Already on latest version"; then
         local new_version
-        new_version=$(printf '%s\n' "$output" | sed -n 's/.*(version \([^)]*\)).*/\1/p' | head -1)
+        new_version=$(printf '%s\n' "$output" | sed -n 's/.*-> \([^[:space:]]\{1,\}\).*/\1/p' | head -1)
+        if [[ -z "$new_version" ]]; then
+            new_version=$(printf '%s\n' "$output" | sed -n 's/.*version[[:space:]]\{1,\}\([^[:space:]]\{1,\}\).*/\1/p' | head -1)
+        fi
         if [[ -z "$new_version" ]]; then
             new_version=$(command -v mo > /dev/null 2>&1 && mo --version 2> /dev/null | awk 'NR==1 && NF {print $NF}' || echo "")
         fi
         if [[ -z "$new_version" ]]; then
             new_version="$fallback_version"
         fi
-        printf '\n%s\n' "${GREEN}${ICON_SUCCESS}${NC} Updated to latest version (${new_version:-unknown})"
+        printf '\n%s\n' "${GREEN}${ICON_SUCCESS}${NC} Updated to latest version, ${new_version:-unknown}"
     fi
 }
 
 output="Installing Mole...
-◎ Mole installed successfully (version 1.23.1)"
+◎ Mole installed successfully, version 1.23.1"
 process_install_output "$output" "1.23.0"
 EOF
 
     [ "$status" -eq 0 ]
-    [[ "$output" == *"Updated to latest version (1.23.1)"* ]]
+    [[ "$output" == *"Updated to latest version, 1.23.1"* ]]
     [[ "$output" != *"1.23.0"* ]]
 }
 
@@ -293,14 +296,17 @@ process_install_output() {
 
     if ! printf '%s\n' "$output" | grep -Eq "Updated to latest version|Already on latest version"; then
         local new_version
-        new_version=$(printf '%s\n' "$output" | sed -n 's/.*(version \([^)]*\)).*/\1/p' | head -1)
+        new_version=$(printf '%s\n' "$output" | sed -n 's/.*-> \([^[:space:]]\{1,\}\).*/\1/p' | head -1)
+        if [[ -z "$new_version" ]]; then
+            new_version=$(printf '%s\n' "$output" | sed -n 's/.*version[[:space:]]\{1,\}\([^[:space:]]\{1,\}\).*/\1/p' | head -1)
+        fi
         if [[ -z "$new_version" ]]; then
             new_version=$(command -v mo > /dev/null 2>&1 && mo --version 2> /dev/null | awk 'NR==1 && NF {print $NF}' || echo "")
         fi
         if [[ -z "$new_version" ]]; then
             new_version="$fallback_version"
         fi
-        printf '\n%s\n' "${GREEN}${ICON_SUCCESS}${NC} Updated to latest version (${new_version:-unknown})"
+        printf '\n%s\n' "${GREEN}${ICON_SUCCESS}${NC} Updated to latest version, ${new_version:-unknown}"
     fi
 }
 
@@ -311,7 +317,7 @@ EOF
 
     [ "$status" -eq 0 ]
     [[ "$output" == *"Installation completed"* ]]
-    [[ "$output" == *"Updated to latest version (1.23.1)"* ]]
+    [[ "$output" == *"Updated to latest version, 1.23.1"* ]]
 }
 
 @test "process_install_output handles empty output with fallback version" {
@@ -333,14 +339,17 @@ process_install_output() {
 
     if ! printf '%s\n' "$output" | grep -Eq "Updated to latest version|Already on latest version"; then
         local new_version
-        new_version=$(printf '%s\n' "$output" | sed -n 's/.*(version \([^)]*\)).*/\1/p' | head -1)
+        new_version=$(printf '%s\n' "$output" | sed -n 's/.*-> \([^[:space:]]\{1,\}\).*/\1/p' | head -1)
+        if [[ -z "$new_version" ]]; then
+            new_version=$(printf '%s\n' "$output" | sed -n 's/.*version[[:space:]]\{1,\}\([^[:space:]]\{1,\}\).*/\1/p' | head -1)
+        fi
         if [[ -z "$new_version" ]]; then
             new_version=$(command -v mo > /dev/null 2>&1 && mo --version 2> /dev/null | awk 'NR==1 && NF {print $NF}' || echo "")
         fi
         if [[ -z "$new_version" ]]; then
             new_version="$fallback_version"
         fi
-        printf '\n%s\n' "${GREEN}${ICON_SUCCESS}${NC} Updated to latest version (${new_version:-unknown})"
+        printf '\n%s\n' "${GREEN}${ICON_SUCCESS}${NC} Updated to latest version, ${new_version:-unknown}"
     fi
 }
 
@@ -349,7 +358,7 @@ process_install_output "$output" "1.23.1"
 EOF
 
     [ "$status" -eq 0 ]
-    [[ "$output" == *"Updated to latest version (1.23.1)"* ]]
+    [[ "$output" == *"Updated to latest version, 1.23.1"* ]]
 }
 
 @test "process_install_output does not extract wrong parentheses content" {
@@ -371,14 +380,17 @@ process_install_output() {
 
     if ! printf '%s\n' "$output" | grep -Eq "Updated to latest version|Already on latest version"; then
         local new_version
-        new_version=$(printf '%s\n' "$output" | sed -n 's/.*(version \([^)]*\)).*/\1/p' | head -1)
+        new_version=$(printf '%s\n' "$output" | sed -n 's/.*-> \([^[:space:]]\{1,\}\).*/\1/p' | head -1)
+        if [[ -z "$new_version" ]]; then
+            new_version=$(printf '%s\n' "$output" | sed -n 's/.*version[[:space:]]\{1,\}\([^[:space:]]\{1,\}\).*/\1/p' | head -1)
+        fi
         if [[ -z "$new_version" ]]; then
             new_version=$(command -v mo > /dev/null 2>&1 && mo --version 2> /dev/null | awk 'NR==1 && NF {print $NF}' || echo "")
         fi
         if [[ -z "$new_version" ]]; then
             new_version="$fallback_version"
         fi
-        printf '\n%s\n' "${GREEN}${ICON_SUCCESS}${NC} Updated to latest version (${new_version:-unknown})"
+        printf '\n%s\n' "${GREEN}${ICON_SUCCESS}${NC} Updated to latest version, ${new_version:-unknown}"
     fi
 }
 
@@ -389,7 +401,7 @@ EOF
 
     [ "$status" -eq 0 ]
     [[ "$output" == *"Downloading (progress: 100%)"* ]]
-    [[ "$output" == *"Updated to latest version (1.23.1)"* ]]
+    [[ "$output" == *"Updated to latest version, 1.23.1"* ]]
     [[ "$output" != *"progress: 100%"* ]] || [[ "$output" == *"Downloading (progress: 100%)"* ]]
 }
 
@@ -418,7 +430,7 @@ curl() {
   if [[ -n "$out" ]]; then
     cat > "$out" << 'INSTALLER'
 #!/usr/bin/env bash
-echo "Mole installed successfully (version $CURRENT_VERSION)"
+echo "Mole installed successfully, version $CURRENT_VERSION"
 INSTALLER
     return 0
   fi

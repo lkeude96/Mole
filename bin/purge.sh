@@ -220,7 +220,7 @@ perform_purge() {
 
 # Show help message
 show_help() {
-    echo -e "${PURPLE_BOLD}Mole Purge${NC} - Clean old project build artifacts"
+    echo -e "${PURPLE_BOLD}Mole Purge${NC}, Clean old project build artifacts"
     echo ""
     echo -e "${YELLOW}Usage:${NC} mo purge [options]"
     echo ""
@@ -231,7 +231,7 @@ show_help() {
     echo ""
     echo -e "${YELLOW}Default Paths:${NC}"
     for path in "${DEFAULT_PURGE_SEARCH_PATHS[@]}"; do
-        echo "  - $path"
+        echo "  * $path"
     done
 }
 

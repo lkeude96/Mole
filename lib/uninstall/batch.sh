@@ -307,7 +307,7 @@ batch_uninstall_applications() {
 
         local brew_tag=""
         [[ "$is_brew_cask" == "true" ]] && brew_tag=" ${CYAN}[Brew]${NC}"
-        echo -e "${BLUE}${ICON_CONFIRM}${NC} ${app_name}${brew_tag} ${GRAY}(${app_size_display})${NC}"
+        echo -e "${BLUE}${ICON_CONFIRM}${NC} ${app_name}${brew_tag} ${GRAY}, ${app_size_display}${NC}"
 
         # Show detailed file list for ALL apps (brew casks leave user data behind)
         local related_files=$(decode_file_list "$encoded_files" "$app_name")
@@ -352,7 +352,7 @@ batch_uninstall_applications() {
 
     echo ""
     local removal_note="Remove ${app_total} ${app_text}"
-    [[ -n "$size_display" ]] && removal_note+=" (${size_display})"
+    [[ -n "$size_display" ]] && removal_note+=", ${size_display}"
     if [[ ${#running_apps[@]} -gt 0 ]]; then
         removal_note+=" ${YELLOW}[Running]${NC}"
     fi
@@ -516,7 +516,7 @@ batch_uninstall_applications() {
             # Show failure
             if [[ -t 1 ]]; then
                 if [[ ${#app_details[@]} -gt 1 ]]; then
-                    echo -e "${ICON_ERROR} [$current_index/${#app_details[@]}] ${app_name} ${GRAY}($reason)${NC}"
+                    echo -e "${ICON_ERROR} [$current_index/${#app_details[@]}] ${app_name} ${GRAY}, $reason${NC}"
                 else
                     echo -e "${ICON_ERROR} ${app_name} failed: $reason"
                 fi
@@ -592,7 +592,7 @@ batch_uninstall_applications() {
                 still*running*) reason_summary="is still running" ;;
                 remove*failed*) reason_summary="could not be removed" ;;
                 permission*denied*) reason_summary="permission denied" ;;
-                owned*by*) reason_summary="$first_reason (try with sudo)" ;;
+                owned*by*) reason_summary="$first_reason, try with sudo" ;;
                 *) reason_summary="$first_reason" ;;
             esac
         fi

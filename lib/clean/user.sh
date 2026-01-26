@@ -14,10 +14,10 @@ clean_user_essentials() {
         [[ "$trash_count" =~ ^[0-9]+$ ]] || trash_count="0"
 
         if [[ "$DRY_RUN" == "true" ]]; then
-            [[ $trash_count -gt 0 ]] && echo -e "  ${YELLOW}${ICON_DRY_RUN}${NC} Trash · would empty ($trash_count items)" || echo -e "  ${GRAY}${ICON_EMPTY}${NC} Trash · already empty"
+            [[ $trash_count -gt 0 ]] && echo -e "  ${YELLOW}${ICON_DRY_RUN}${NC} Trash · would empty, $trash_count items" || echo -e "  ${GRAY}${ICON_EMPTY}${NC} Trash · already empty"
         elif [[ $trash_count -gt 0 ]]; then
             if osascript -e 'tell application "Finder" to empty trash' > /dev/null 2>&1; then
-                echo -e "  ${GREEN}${ICON_SUCCESS}${NC} Trash · emptied ($trash_count items)"
+                echo -e "  ${GREEN}${ICON_SUCCESS}${NC} Trash · emptied, $trash_count items"
                 note_activity
             else
                 safe_clean ~/.Trash/* "Trash"
@@ -97,9 +97,9 @@ clean_chrome_old_versions() {
         local size_human
         size_human=$(bytes_to_human "$((total_size * 1024))")
         if [[ "$DRY_RUN" == "true" ]]; then
-            echo -e "  ${YELLOW}${ICON_DRY_RUN}${NC} Chrome old versions ${YELLOW}(${cleaned_count} dirs, $size_human dry)${NC}"
+            echo -e "  ${YELLOW}${ICON_DRY_RUN}${NC} Chrome old versions${NC}, ${YELLOW}${cleaned_count} dirs, $size_human dry${NC}"
         else
-            echo -e "  ${GREEN}${ICON_SUCCESS}${NC} Chrome old versions ${GREEN}(${cleaned_count} dirs, $size_human)${NC}"
+            echo -e "  ${GREEN}${ICON_SUCCESS}${NC} Chrome old versions${NC}, ${GREEN}${cleaned_count} dirs, $size_human${NC}"
         fi
         ((files_cleaned += cleaned_count))
         ((total_size_cleaned += total_size))
@@ -183,9 +183,9 @@ clean_edge_old_versions() {
         local size_human
         size_human=$(bytes_to_human "$((total_size * 1024))")
         if [[ "$DRY_RUN" == "true" ]]; then
-            echo -e "  ${YELLOW}${ICON_DRY_RUN}${NC} Edge old versions ${YELLOW}(${cleaned_count} dirs, $size_human dry)${NC}"
+            echo -e "  ${YELLOW}${ICON_DRY_RUN}${NC} Edge old versions${NC}, ${YELLOW}${cleaned_count} dirs, $size_human dry${NC}"
         else
-            echo -e "  ${GREEN}${ICON_SUCCESS}${NC} Edge old versions ${GREEN}(${cleaned_count} dirs, $size_human)${NC}"
+            echo -e "  ${GREEN}${ICON_SUCCESS}${NC} Edge old versions${NC}, ${GREEN}${cleaned_count} dirs, $size_human${NC}"
         fi
         ((files_cleaned += cleaned_count))
         ((total_size_cleaned += total_size))
@@ -245,9 +245,9 @@ clean_edge_updater_old_versions() {
         local size_human
         size_human=$(bytes_to_human "$((total_size * 1024))")
         if [[ "$DRY_RUN" == "true" ]]; then
-            echo -e "  ${YELLOW}${ICON_DRY_RUN}${NC} Edge updater old versions ${YELLOW}(${cleaned_count} dirs, $size_human dry)${NC}"
+            echo -e "  ${YELLOW}${ICON_DRY_RUN}${NC} Edge updater old versions${NC}, ${YELLOW}${cleaned_count} dirs, $size_human dry${NC}"
         else
-            echo -e "  ${GREEN}${ICON_SUCCESS}${NC} Edge updater old versions ${GREEN}(${cleaned_count} dirs, $size_human)${NC}"
+            echo -e "  ${GREEN}${ICON_SUCCESS}${NC} Edge updater old versions${NC}, ${GREEN}${cleaned_count} dirs, $size_human${NC}"
         fi
         ((files_cleaned += cleaned_count))
         ((total_size_cleaned += total_size))
@@ -285,12 +285,12 @@ scan_external_volumes() {
     local network_count=${#network_volumes[@]}
     if [[ $volume_count -eq 0 ]]; then
         if [[ $network_count -gt 0 ]]; then
-            echo -e "  ${GRAY}${ICON_LIST}${NC} External volumes (${network_count} network volume(s) skipped)"
+            echo -e "  ${GRAY}${ICON_LIST}${NC} External volumes, ${network_count} network volumes skipped"
             note_activity
         fi
         return 0
     fi
-    start_section_spinner "Scanning $volume_count external volume(s)..."
+    start_section_spinner "Scanning $volume_count external volumes..."
     for volume in "${candidate_volumes[@]}"; do
         [[ -d "$volume" && -r "$volume" ]] || continue
         local volume_trash="$volume/.Trashes"
@@ -300,7 +300,7 @@ scan_external_volumes() {
             done < <(command find "$volume_trash" -mindepth 1 -maxdepth 1 -print0 2> /dev/null || true)
         fi
         if [[ "$PROTECT_FINDER_METADATA" != "true" ]]; then
-            clean_ds_store_tree "$volume" "$(basename "$volume") volume (.DS_Store)"
+            clean_ds_store_tree "$volume" "$(basename "$volume") volume, .DS_Store"
         fi
     done
     stop_section_spinner
@@ -310,7 +310,7 @@ clean_finder_metadata() {
     if [[ "$PROTECT_FINDER_METADATA" == "true" ]]; then
         return
     fi
-    clean_ds_store_tree "$HOME" "Home directory (.DS_Store)"
+    clean_ds_store_tree "$HOME" "Home directory, .DS_Store"
 }
 # macOS system caches and user-level leftovers.
 clean_macos_system_caches() {
@@ -389,7 +389,7 @@ clean_mail_downloads() {
     done
     if [[ $count -gt 0 ]]; then
         local cleaned_mb=$(echo "$cleaned_kb" | awk '{printf "%.1f", $1/1024}' || echo "0.0")
-        echo "  ${GREEN}${ICON_SUCCESS}${NC} Cleaned $count mail attachments (~${cleaned_mb}MB)"
+        echo "  ${GREEN}${ICON_SUCCESS}${NC} Cleaned $count mail attachments, about ${cleaned_mb}MB"
         note_activity
     fi
 }
@@ -418,9 +418,9 @@ clean_sandboxed_app_caches() {
     if [[ "$found_any" == "true" ]]; then
         local size_human=$(bytes_to_human "$((total_size * 1024))")
         if [[ "$DRY_RUN" == "true" ]]; then
-            echo -e "  ${YELLOW}${ICON_DRY_RUN}${NC} Sandboxed app caches ${YELLOW}($size_human dry)${NC}"
+            echo -e "  ${YELLOW}${ICON_DRY_RUN}${NC} Sandboxed app caches${NC}, ${YELLOW}$size_human dry${NC}"
         else
-            echo -e "  ${GREEN}${ICON_SUCCESS}${NC} Sandboxed app caches ${GREEN}($size_human)${NC}"
+            echo -e "  ${GREEN}${ICON_SUCCESS}${NC} Sandboxed app caches${NC}, ${GREEN}$size_human${NC}"
         fi
         ((files_cleaned += cleaned_count))
         ((total_size_cleaned += total_size))
@@ -603,9 +603,9 @@ clean_application_support_logs() {
     if [[ "$found_any" == "true" ]]; then
         local size_human=$(bytes_to_human "$((total_size * 1024))")
         if [[ "$DRY_RUN" == "true" ]]; then
-            echo -e "  ${YELLOW}${ICON_DRY_RUN}${NC} Application Support logs/caches ${YELLOW}($size_human dry)${NC}"
+            echo -e "  ${YELLOW}${ICON_DRY_RUN}${NC} Application Support logs/caches${NC}, ${YELLOW}$size_human dry${NC}"
         else
-            echo -e "  ${GREEN}${ICON_SUCCESS}${NC} Application Support logs/caches ${GREEN}($size_human)${NC}"
+            echo -e "  ${GREEN}${ICON_SUCCESS}${NC} Application Support logs/caches${NC}, ${GREEN}$size_human${NC}"
         fi
         ((files_cleaned += cleaned_count))
         ((total_size_cleaned += total_size))
