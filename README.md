@@ -265,8 +265,7 @@ Big thanks to all contributors who helped build Mole. Go follow them! ❤️
   <img src="./CONTRIBUTORS.svg?v=2" width="1000" />
 </a>
 
----
-
+<br/>
 Real feedback from users who shared Mole on X.
 
 <img src="https://cdn.tw93.fun/pic/lovemole.jpeg" alt="Community feedback on Mole" width="1000" />
