@@ -601,7 +601,7 @@ safe_clean() {
     fi
 
     if [[ "$show_spinner" == "true" || "$cleaning_spinner_started" == "true" ]]; then
-        stop_section_spinner
+        stop_inline_spinner
     fi
 
     local permission_end=${MOLE_PERMISSION_DENIED_COUNT:-0}

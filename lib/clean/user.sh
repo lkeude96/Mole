@@ -14,7 +14,7 @@ clean_user_essentials() {
         [[ "$trash_count" =~ ^[0-9]+$ ]] || trash_count="0"
 
         if [[ "$DRY_RUN" == "true" ]]; then
-            [[ $trash_count -gt 0 ]] && echo -e "  ${YELLOW}${ICON_DRY_RUN}${NC} Trash · would empty, $trash_count items" || echo -e "  ${GRAY}${ICON_EMPTY}${NC} Trash · already empty"
+            [[ $trash_count -gt 0 ]] && echo -e "  ${YELLOW}${ICON_DRY_RUN}${NC} Trash · would empty, $trash_count items" || echo -e "  ${GREEN}${ICON_SUCCESS}${NC} Trash · already empty"
         elif [[ $trash_count -gt 0 ]]; then
             if osascript -e 'tell application "Finder" to empty trash' > /dev/null 2>&1; then
                 echo -e "  ${GREEN}${ICON_SUCCESS}${NC} Trash · emptied, $trash_count items"
@@ -23,7 +23,7 @@ clean_user_essentials() {
                 safe_clean ~/.Trash/* "Trash"
             fi
         else
-            echo -e "  ${GRAY}${ICON_EMPTY}${NC} Trash · already empty"
+            echo -e "  ${GREEN}${ICON_SUCCESS}${NC} Trash · already empty"
         fi
     fi
 }
