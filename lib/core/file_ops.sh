@@ -383,7 +383,7 @@ safe_sudo_remove() {
             log_operation "${MOLE_CURRENT_COMMAND:-clean}" "FAILED" "$path" "readonly filesystem"
             return "$MOLE_ERR_READONLY_FS"
             ;;
-        *"Sorry, try again"* | *"incorrect password"*)
+        *"Sorry, try again"* | *"incorrect passphrase"* | *"incorrect credentials"*)
             log_operation "${MOLE_CURRENT_COMMAND:-clean}" "FAILED" "$path" "auth failed"
             return "$MOLE_ERR_AUTH_FAILED"
             ;;
@@ -536,7 +536,7 @@ diagnose_removal_failure() {
         "$MOLE_ERR_AUTH_FAILED")
             reason="authentication failed"
             if [[ -f "$touchid_file" ]] && grep -q "pam_tid.so" "$touchid_file" 2> /dev/null; then
-                suggestion="Check your password or restart Terminal"
+                suggestion="Check your credentials or restart Terminal"
             else
                 suggestion="Try 'mole touchid' to enable fingerprint auth"
             fi
