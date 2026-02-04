@@ -21,7 +21,9 @@ teardown_file() {
 }
 
 @test "clean_chrome_old_versions skips when Chrome is running" {
-    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" bash --noprofile --norc <<'EOF'
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" \
+        MOLE_CHROME_APP_PATHS="$HOME/Applications/Google Chrome.app" \
+        bash --noprofile --norc <<'EOF'
 set -euo pipefail
 source "$PROJECT_ROOT/lib/core/common.sh"
 source "$PROJECT_ROOT/lib/clean/user.sh"
@@ -39,7 +41,9 @@ EOF
 }
 
 @test "clean_chrome_old_versions removes old versions but keeps current" {
-    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" DRY_RUN=true bash --noprofile --norc <<'EOF'
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" DRY_RUN=true \
+        MOLE_CHROME_APP_PATHS="$HOME/Applications/Google Chrome.app" \
+        bash --noprofile --norc <<'EOF'
 set -euo pipefail
 source "$PROJECT_ROOT/lib/core/common.sh"
 source "$PROJECT_ROOT/lib/clean/user.sh"
@@ -81,7 +85,9 @@ EOF
 }
 
 @test "clean_chrome_old_versions respects whitelist" {
-    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" DRY_RUN=true bash --noprofile --norc <<'EOF'
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" DRY_RUN=true \
+        MOLE_CHROME_APP_PATHS="$HOME/Applications/Google Chrome.app" \
+        bash --noprofile --norc <<'EOF'
 set -euo pipefail
 source "$PROJECT_ROOT/lib/core/common.sh"
 source "$PROJECT_ROOT/lib/clean/user.sh"
@@ -169,7 +175,9 @@ EOF
     # Create a marker file in old version
     touch "$VERSIONS_DIR/128.0.0.0/marker.txt"
 
-    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" DRY_RUN=true bash --noprofile --norc <<'EOF'
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" DRY_RUN=true \
+        MOLE_CHROME_APP_PATHS="$HOME/Applications/Google Chrome.app" \
+        bash --noprofile --norc <<'EOF'
 set -euo pipefail
 source "$PROJECT_ROOT/lib/core/common.sh"
 source "$PROJECT_ROOT/lib/clean/user.sh"
@@ -198,7 +206,9 @@ EOF
     # Use a fresh temp directory for this test
     TEST_HOME="$(mktemp -d "${BATS_TEST_DIRNAME}/tmp-test5.XXXXXX")"
 
-    run env HOME="$TEST_HOME" PROJECT_ROOT="$PROJECT_ROOT" bash --noprofile --norc <<'EOF'
+    run env HOME="$TEST_HOME" PROJECT_ROOT="$PROJECT_ROOT" \
+        MOLE_CHROME_APP_PATHS="$TEST_HOME/Applications/Google Chrome.app" \
+        bash --noprofile --norc <<'EOF'
 set -euo pipefail
 source "$PROJECT_ROOT/lib/core/common.sh"
 source "$PROJECT_ROOT/lib/clean/user.sh"

@@ -39,10 +39,15 @@ clean_user_essentials() {
 
 # Remove old Google Chrome versions while keeping Current.
 clean_chrome_old_versions() {
-    local -a app_paths=(
-        "/Applications/Google Chrome.app"
-        "$HOME/Applications/Google Chrome.app"
-    )
+    local -a app_paths=()
+    if [[ -n "${MOLE_CHROME_APP_PATHS:-}" ]]; then
+        IFS=':' read -ra app_paths <<< "$MOLE_CHROME_APP_PATHS"
+    else
+        app_paths=(
+            "/Applications/Google Chrome.app"
+            "$HOME/Applications/Google Chrome.app"
+        )
+    fi
 
     # Match the exact Chrome process name to avoid false positives
     if pgrep -x "Google Chrome" > /dev/null 2>&1; then
@@ -92,7 +97,7 @@ clean_chrome_old_versions() {
             total_size=$((total_size + size_kb))
             ((cleaned_count++))
             cleaned_any=true
-            if [[ "$DRY_RUN" != "true" ]]; then
+            if [[ "${DRY_RUN:-false}" != "true" ]]; then
                 if has_sudo_session; then
                     safe_sudo_remove "$dir" > /dev/null 2>&1 || true
                 else
@@ -105,7 +110,7 @@ clean_chrome_old_versions() {
     if [[ "$cleaned_any" == "true" ]]; then
         local size_human
         size_human=$(bytes_to_human "$((total_size * 1024))")
-        if [[ "$DRY_RUN" == "true" ]]; then
+        if [[ "${DRY_RUN:-false}" == "true" ]]; then
             echo -e "  ${YELLOW}${ICON_DRY_RUN}${NC} Chrome old versions${NC}, ${YELLOW}${cleaned_count} dirs, $size_human dry${NC}"
         else
             echo -e "  ${GREEN}${ICON_SUCCESS}${NC} Chrome old versions${NC}, ${GREEN}${cleaned_count} dirs, $size_human${NC}"

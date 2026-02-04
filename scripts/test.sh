@@ -150,11 +150,31 @@ echo ""
 
 echo "3. Running Go tests..."
 if command -v go > /dev/null 2>&1; then
-    if go build ./... > /dev/null 2>&1 && go vet ./cmd/... > /dev/null 2>&1 && go test ./cmd/... > /dev/null 2>&1; then
-        printf "${GREEN}${ICON_SUCCESS} Go tests passed${NC}\n"
+    # Ensure Go build cache is writable (some sandboxed environments deny access to ~/Library/Caches).
+    if [[ -z "${GOCACHE:-}" ]]; then
+        export GOCACHE="$PROJECT_ROOT/.gocache"
+    fi
+    mkdir -p "$GOCACHE" 2> /dev/null || true
+
+    go_out=""
+    if ! go_out=$(go build ./... 2>&1); then
+        :
+    elif ! go_out=$(go vet ./cmd/... 2>&1); then
+        :
+    elif ! go_out=$(go test ./cmd/... 2>&1); then
+        :
     else
-        printf "${RED}${ICON_ERROR} Go tests failed${NC}\n"
-        ((FAILED++))
+        printf "${GREEN}${ICON_SUCCESS} Go tests passed${NC}\n"
+        go_out=""
+    fi
+
+    if [[ -n "$go_out" ]]; then
+        if echo "$go_out" | grep -Eq "proxy\\.golang\\.org|no such host|dial tcp|i/o timeout|TLS handshake timeout"; then
+            printf "${YELLOW}${ICON_WARNING} Go tests skipped (offline dependencies)${NC}\n"
+        else
+            printf "${RED}${ICON_ERROR} Go tests failed${NC}\n"
+            ((FAILED++))
+        fi
     fi
 else
     printf "${YELLOW}${ICON_WARNING} Go not installed, skipping Go tests${NC}\n"

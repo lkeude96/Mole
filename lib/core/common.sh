@@ -14,12 +14,17 @@ _MOLE_CORE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # Load core modules
 source "$_MOLE_CORE_DIR/base.sh"
+source "$_MOLE_CORE_DIR/json_output.sh"
 source "$_MOLE_CORE_DIR/log.sh"
 
 source "$_MOLE_CORE_DIR/timeout.sh"
 source "$_MOLE_CORE_DIR/file_ops.sh"
 source "$_MOLE_CORE_DIR/ui.sh"
 source "$_MOLE_CORE_DIR/app_protection.sh"
+
+# Some library modules rely on DRY_RUN being defined. Default to "false" so
+# modules can be sourced safely under `set -u` (including in unit tests).
+: "${DRY_RUN:=false}"
 
 # Load sudo management if available
 if [[ -f "$_MOLE_CORE_DIR/sudo.sh" ]]; then

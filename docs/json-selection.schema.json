@@ -1,0 +1,114 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://burrow.example/schema/mole/json-selection.schema.json",
+  "title": "Mole JSON Selection Manifest",
+  "type": "object",
+  "required": ["schema_version", "operation", "payload"],
+  "additionalProperties": true,
+  "properties": {
+    "schema_version": { "type": "integer", "const": 1 },
+    "run_id": {
+      "type": "string",
+      "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+    },
+    "operation": { "type": "string" },
+    "payload": { "type": "object", "additionalProperties": true }
+  },
+  "oneOf": [
+    {
+      "title": "clean",
+      "properties": {
+        "operation": { "const": "clean" },
+        "payload": {
+          "type": "object",
+          "required": ["paths"],
+          "additionalProperties": true,
+          "properties": {
+            "paths": {
+              "type": "array",
+              "items": { "type": "string", "pattern": "^/" },
+              "minItems": 1
+            }
+          }
+        }
+      }
+    },
+    {
+      "title": "uninstall",
+      "properties": {
+        "operation": { "const": "uninstall" },
+        "payload": {
+          "type": "object",
+          "required": ["apps"],
+          "additionalProperties": true,
+          "properties": {
+            "apps": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "type": "object",
+                "required": ["bundle_id", "path"],
+                "additionalProperties": true,
+                "properties": {
+                  "bundle_id": { "type": "string", "minLength": 1 },
+                  "path": { "type": "string", "pattern": "^/" }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "title": "optimize",
+      "properties": {
+        "operation": { "const": "optimize" },
+        "payload": {
+          "type": "object",
+          "required": ["actions"],
+          "additionalProperties": true,
+          "properties": {
+            "actions": { "type": "array", "items": { "type": "string" }, "minItems": 1 }
+          }
+        }
+      }
+    },
+    {
+      "title": "purge",
+      "properties": {
+        "operation": { "const": "purge" },
+        "payload": {
+          "type": "object",
+          "required": ["paths"],
+          "additionalProperties": true,
+          "properties": {
+            "paths": {
+              "type": "array",
+              "items": { "type": "string", "pattern": "^/" },
+              "minItems": 1
+            }
+          }
+        }
+      }
+    },
+    {
+      "title": "installer",
+      "properties": {
+        "operation": { "const": "installer" },
+        "payload": {
+          "type": "object",
+          "required": ["paths"],
+          "additionalProperties": true,
+          "properties": {
+            "paths": {
+              "type": "array",
+              "items": { "type": "string", "pattern": "^/" },
+              "minItems": 1
+            }
+          }
+        }
+      }
+    }
+  ]
+}
+

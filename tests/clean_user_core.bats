@@ -109,6 +109,9 @@ set -euo pipefail
 source "$PROJECT_ROOT/lib/core/common.sh"
 source "$PROJECT_ROOT/lib/clean/user.sh"
 safe_clean() { echo "$2"; }
+files_cleaned=0
+total_size_cleaned=0
+total_items=0
 clean_browsers
 EOF
 

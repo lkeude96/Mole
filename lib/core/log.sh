@@ -78,7 +78,11 @@ get_timestamp() {
 
 # Log informational message
 log_info() {
-    echo -e "${BLUE}$1${NC}"
+    if [[ "${MOLE_OUTPUT:-}" == "json" ]]; then
+        echo -e "${BLUE}$1${NC}" >&2
+    else
+        echo -e "${BLUE}$1${NC}"
+    fi
     local timestamp
     timestamp=$(get_timestamp)
     echo "[$timestamp] INFO: $1" >> "$LOG_FILE" 2> /dev/null || true
@@ -89,7 +93,11 @@ log_info() {
 
 # Log success message
 log_success() {
-    echo -e "  ${GREEN}${ICON_SUCCESS}${NC} $1"
+    if [[ "${MOLE_OUTPUT:-}" == "json" ]]; then
+        echo -e "  ${GREEN}${ICON_SUCCESS}${NC} $1" >&2
+    else
+        echo -e "  ${GREEN}${ICON_SUCCESS}${NC} $1"
+    fi
     local timestamp
     timestamp=$(get_timestamp)
     echo "[$timestamp] SUCCESS: $1" >> "$LOG_FILE" 2> /dev/null || true
@@ -100,7 +108,11 @@ log_success() {
 
 # shellcheck disable=SC2329
 log_warning() {
-    echo -e "${YELLOW}$1${NC}"
+    if [[ "${MOLE_OUTPUT:-}" == "json" ]]; then
+        echo -e "${YELLOW}$1${NC}" >&2
+    else
+        echo -e "${YELLOW}$1${NC}"
+    fi
     local timestamp
     timestamp=$(get_timestamp)
     echo "[$timestamp] WARNING: $1" >> "$LOG_FILE" 2> /dev/null || true
