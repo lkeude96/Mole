@@ -121,6 +121,9 @@ Optional:
 - `counts` (object)
 - `totals` (object)
 
+Notes:
+- `counts` and `totals` are operation-specific aggregates. Producers may add additional fields (e.g., skip breakdowns) without breaking consumers.
+
 #### `warning` / `error`
 
 ```json
@@ -150,13 +153,19 @@ Optional:
 Scan mode (`--json-scan`):
 - `section_start`: `{ "name": "User essentials" }`
 - `item_found`: `{ "path": "/...", "category": "...", "size_bytes": 123, "age_days": 30?, "source": "user|system|external"?, "protected": bool? }`
+- `item_skipped` (optional): `{ "path": "/...", "reason": "protected|whitelist" }`
 - `section_complete`: `{ "name": "...", "item_count": n, "total_size_bytes": m }`
-- `summary`: `{ "item_count": n, "total_size_bytes": m, "whitelist_skipped_count": k?, "permission_denied_count": p? }`
+- `summary`: `{ "item_count": n, "total_size_bytes": m, "whitelist_skipped_count": k?, "protected_skipped_count": s?, "permission_denied_count": p? }`
+
+Notes:
+- `whitelist_skipped_count` counts only items skipped due to whitelist.
+- `protected_skipped_count` counts only items skipped due to protection rules (e.g., system-critical/data-protected paths).
 
 Apply mode (`--apply <manifest>`):
 - `item_cleaned`: `{ "path": "/...", "size_bytes": 123 }`
 - `item_skipped`: `{ "path": "/...", "reason": "protected|whitelist|missing|permission_denied|in_use|unknown" }`
 - `item_failed`: `{ "path": "/...", "reason": "...", "message": "..."? }`
+- `summary`: `{ "item_count": n, "total_size_bytes": m, "skipped_count": k, "failed_count": f, "missing_skipped_count": a?, "permission_denied_skipped_count": b?, "in_use_skipped_count": c?, "permission_denied_count": p? }`
 
 ### 3.3 Uninstall (`mo uninstall`)
 

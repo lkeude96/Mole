@@ -27,6 +27,11 @@ IS_M_SERIES=$([[ "$(uname -m)" == "arm64" ]] && echo "true" || echo "false")
 
 EXPORT_LIST_FILE="$HOME/.config/mole/clean-list.txt"
 CURRENT_SECTION=""
+MOLE_JSON_COMMAND_MODE=""
+MOLE_JSON_APPLY_MANIFEST=""
+SECTION_ITEM_COUNT=0
+SECTION_TOTAL_SIZE_KB=0
+MOLE_CLEAN_JSON_FAILED_COUNT=0
 readonly PROTECTED_SW_DOMAINS=(
     "capcut.com"
     "photopea.com"
@@ -121,6 +126,10 @@ SECTION_ACTIVITY=0
 files_cleaned=0
 total_size_cleaned=0
 whitelist_skipped_count=0
+protected_skipped_count=0
+missing_skipped_count=0
+permission_denied_skipped_count=0
+in_use_skipped_count=0
 
 # shellcheck disable=SC2329
 note_activity() {
@@ -157,6 +166,12 @@ start_section() {
     TRACK_SECTION=1
     SECTION_ACTIVITY=0
     CURRENT_SECTION="$1"
+    SECTION_ITEM_COUNT=0
+    SECTION_TOTAL_SIZE_KB=0
+
+    if mole_json_enabled && [[ -n "${MOLE_JSON_COMMAND_MODE:-}" ]]; then
+        mole_json_emit_event "clean" "section_start" "{\"name\":$(mole_json_quote "$1")}"
+    fi
     echo ""
     echo -e "${PURPLE_BOLD}${ICON_ARROW} $1${NC}"
 
@@ -169,6 +184,12 @@ start_section() {
 
 end_section() {
     stop_section_spinner
+
+    if mole_json_enabled && [[ -n "${MOLE_JSON_COMMAND_MODE:-}" ]]; then
+        local size_bytes=$((SECTION_TOTAL_SIZE_KB * 1024))
+        mole_json_emit_event "clean" "section_complete" \
+            "{\"name\":$(mole_json_quote "${CURRENT_SECTION:-}"),\"item_count\":$SECTION_ITEM_COUNT,\"total_size_bytes\":$size_bytes}"
+    fi
 
     if [[ "${TRACK_SECTION:-0}" == "1" && "${SECTION_ACTIVITY:-0}" == "0" ]]; then
         echo -e "  ${GREEN}${ICON_SUCCESS}${NC} Nothing to clean"
@@ -343,7 +364,6 @@ safe_clean() {
     local removed_any=0
     local total_size_kb=0
     local total_count=0
-    local skipped_count=0
     local removal_failed_count=0
     local permission_start=${MOLE_PERMISSION_DENIED_COUNT:-0}
 
@@ -360,19 +380,36 @@ safe_clean() {
 
         if should_protect_path "$path"; then
             skip=true
-            ((skipped_count++))
+            ((protected_skipped_count++))
             log_operation "clean" "SKIPPED" "$path" "protected"
+            if mole_json_enabled && [[ -n "${MOLE_JSON_COMMAND_MODE:-}" ]]; then
+                mole_json_emit_event "clean" "item_skipped" \
+                    "{\"path\":$(mole_json_quote "$path"),\"reason\":$(mole_json_quote "protected")}"
+            fi
         fi
 
         [[ "$skip" == "true" ]] && continue
 
         if is_path_whitelisted "$path"; then
             skip=true
-            ((skipped_count++))
+            ((whitelist_skipped_count++))
             log_operation "clean" "SKIPPED" "$path" "whitelist"
+            if mole_json_enabled && [[ -n "${MOLE_JSON_COMMAND_MODE:-}" ]]; then
+                mole_json_emit_event "clean" "item_skipped" \
+                    "{\"path\":$(mole_json_quote "$path"),\"reason\":$(mole_json_quote "whitelist")}"
+            fi
         fi
         [[ "$skip" == "true" ]] && continue
-        [[ -e "$path" ]] && existing_paths+=("$path")
+
+        if [[ -e "$path" ]]; then
+            existing_paths+=("$path")
+        else
+            if mole_json_enabled && [[ "${MOLE_JSON_COMMAND_MODE:-}" == "apply" ]]; then
+                ((missing_skipped_count++))
+                mole_json_emit_event "clean" "item_skipped" \
+                    "{\"path\":$(mole_json_quote "$path"),\"reason\":$(mole_json_quote "missing")}"
+            fi
+        fi
     done
 
     if [[ "$show_scan_feedback" == "true" ]]; then
@@ -399,10 +436,6 @@ safe_clean() {
         else
             debug_operation_detail "Files to be removed" "Showing first 10 of ${#existing_paths[@]} files"
         fi
-    fi
-
-    if [[ $skipped_count -gt 0 ]]; then
-        ((whitelist_skipped_count += skipped_count))
     fi
 
     if [[ ${#existing_paths[@]} -eq 0 ]]; then
@@ -543,6 +576,19 @@ safe_clean() {
                     fi
 
                     if [[ $removed -eq 1 ]]; then
+                        if mole_json_enabled && [[ -n "${MOLE_JSON_COMMAND_MODE:-}" ]]; then
+                            local size_num="${size:-0}"
+                            [[ ! "$size_num" =~ ^[0-9]+$ ]] && size_num=0
+                            if [[ "${MOLE_JSON_COMMAND_MODE}" == "scan" ]]; then
+                                mole_json_emit_event "clean" "item_found" \
+                                    "{\"path\":$(mole_json_quote "$path"),\"category\":$(mole_json_quote "${CURRENT_SECTION:-$description}"),\"size_bytes\":$((size_num * 1024))}"
+                            elif [[ "${MOLE_JSON_COMMAND_MODE}" == "apply" ]]; then
+                                mole_json_emit_event "clean" "item_cleaned" \
+                                    "{\"path\":$(mole_json_quote "$path"),\"size_bytes\":$((size_num * 1024))}"
+                            fi
+                            ((SECTION_ITEM_COUNT += 1))
+                            ((SECTION_TOTAL_SIZE_KB += size_num))
+                        fi
                         if [[ "$size" -gt 0 ]]; then
                             ((total_size_kb += size))
                         fi
@@ -551,6 +597,22 @@ safe_clean() {
                     else
                         if [[ -e "$path" && "$DRY_RUN" != "true" ]]; then
                             ((removal_failed_count++))
+                            if mole_json_enabled && [[ "${MOLE_JSON_COMMAND_MODE:-}" == "apply" ]]; then
+                                local reason="${MOLE_LAST_REMOVE_ERROR:-unknown}"
+                                if [[ "$reason" == "permission_denied" || "$reason" == "in_use" ]]; then
+                                    mole_json_emit_event "clean" "item_skipped" \
+                                        "{\"path\":$(mole_json_quote "$path"),\"reason\":$(mole_json_quote "$reason")}"
+                                    if [[ "$reason" == "permission_denied" ]]; then
+                                        ((permission_denied_skipped_count += 1))
+                                    else
+                                        ((in_use_skipped_count += 1))
+                                    fi
+                                else
+                                    mole_json_emit_event "clean" "item_failed" \
+                                        "{\"path\":$(mole_json_quote "$path"),\"reason\":$(mole_json_quote "unknown")}"
+                                    ((MOLE_CLEAN_JSON_FAILED_COUNT += 1))
+                                fi
+                            fi
                         fi
                     fi
                 fi
@@ -581,6 +643,19 @@ safe_clean() {
                 fi
 
                 if [[ $removed -eq 1 ]]; then
+                    if mole_json_enabled && [[ -n "${MOLE_JSON_COMMAND_MODE:-}" ]]; then
+                        local size_num="${size_kb:-0}"
+                        [[ ! "$size_num" =~ ^[0-9]+$ ]] && size_num=0
+                        if [[ "${MOLE_JSON_COMMAND_MODE}" == "scan" ]]; then
+                            mole_json_emit_event "clean" "item_found" \
+                                "{\"path\":$(mole_json_quote "$path"),\"category\":$(mole_json_quote "${CURRENT_SECTION:-$description}"),\"size_bytes\":$((size_num * 1024))}"
+                        elif [[ "${MOLE_JSON_COMMAND_MODE}" == "apply" ]]; then
+                            mole_json_emit_event "clean" "item_cleaned" \
+                                "{\"path\":$(mole_json_quote "$path"),\"size_bytes\":$((size_num * 1024))}"
+                        fi
+                        ((SECTION_ITEM_COUNT += 1))
+                        ((SECTION_TOTAL_SIZE_KB += size_num))
+                    fi
                     if [[ "$size_kb" -gt 0 ]]; then
                         ((total_size_kb += size_kb))
                     fi
@@ -589,6 +664,22 @@ safe_clean() {
                 else
                     if [[ -e "$path" && "$DRY_RUN" != "true" ]]; then
                         ((removal_failed_count++))
+                        if mole_json_enabled && [[ "${MOLE_JSON_COMMAND_MODE:-}" == "apply" ]]; then
+                            local reason="${MOLE_LAST_REMOVE_ERROR:-unknown}"
+                            if [[ "$reason" == "permission_denied" || "$reason" == "in_use" ]]; then
+                                mole_json_emit_event "clean" "item_skipped" \
+                                    "{\"path\":$(mole_json_quote "$path"),\"reason\":$(mole_json_quote "$reason")}"
+                                if [[ "$reason" == "permission_denied" ]]; then
+                                    ((permission_denied_skipped_count += 1))
+                                else
+                                    ((in_use_skipped_count += 1))
+                                fi
+                            else
+                                mole_json_emit_event "clean" "item_failed" \
+                                    "{\"path\":$(mole_json_quote "$path"),\"reason\":$(mole_json_quote "unknown")}"
+                                ((MOLE_CLEAN_JSON_FAILED_COUNT += 1))
+                            fi
+                        fi
                     fi
                 fi
                 ((idx++))
@@ -824,6 +915,10 @@ perform_cleanup() {
     fi
 
     if [[ "$test_mode_enabled" == "true" ]]; then
+        if mole_json_enabled && [[ "${MOLE_JSON_COMMAND_MODE:-}" == "scan" ]]; then
+            start_section "Test mode"
+            end_section
+        fi
         local summary_heading="Test mode complete"
         local -a summary_details
         summary_details=()
@@ -1075,22 +1170,139 @@ perform_cleanup() {
 }
 
 main() {
-    for arg in "$@"; do
-        case "$arg" in
+    local -a rest=()
+    local -a orig_argv=("$@")
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
             "--debug")
                 export MO_DEBUG=1
+                shift
                 ;;
             "--dry-run" | "-n")
                 DRY_RUN=true
                 export MOLE_DRY_RUN=1
+                shift
+                ;;
+            "--json-scan")
+                MOLE_JSON_COMMAND_MODE="scan"
+                DRY_RUN=true
+                export MOLE_DRY_RUN=1
+                shift
+                ;;
+            "--apply")
+                MOLE_JSON_COMMAND_MODE="apply"
+                MOLE_JSON_APPLY_MANIFEST="${2:-}"
+                if [[ -z "$MOLE_JSON_APPLY_MANIFEST" ]]; then
+                    log_error "--apply requires a manifest path"
+                    exit 2
+                fi
+                shift 2
                 ;;
             "--whitelist")
                 source "$SCRIPT_DIR/../lib/manage/whitelist.sh"
                 manage_whitelist "clean"
                 exit 0
                 ;;
+            *)
+                rest+=("$1")
+                shift
+                ;;
         esac
     done
+
+    if [[ -n "${MOLE_JSON_COMMAND_MODE:-}" ]]; then
+        if ! mole_json_enabled; then
+            log_error "JSON contract mode requires MOLE_OUTPUT=json"
+            exit 2
+        fi
+
+        # Keep stdout clean for NDJSON by routing all non-JSON output to stderr.
+        exec 3>&1 1>&2
+        export MOLE_JSON_OUT_FD=3
+
+        local start_epoch
+        start_epoch=$(date -u +%s 2> /dev/null || echo "0")
+
+        local dry_run_json="false"
+        [[ "$DRY_RUN" == "true" ]] && dry_run_json="true"
+        mole_json_emit_operation_start "clean" "$MOLE_JSON_COMMAND_MODE" "$dry_run_json" "$0" "${orig_argv[@]}"
+
+        local exit_code=0
+        local canceled="false"
+
+        trap 'canceled="true"; mole_json_emit_error "clean" "error" "canceled" "Operation canceled" "" "" "" ""; mole_json_emit_operation_complete "clean" "false" "true" "130" "0" "{}" "{}"; cleanup INT 130; exit 130' INT
+        trap 'canceled="true"; mole_json_emit_error "clean" "error" "canceled" "Operation canceled" "" "" "" ""; mole_json_emit_operation_complete "clean" "false" "true" "143" "0" "{}" "{}"; cleanup TERM 143; exit 143' TERM
+
+        if [[ "$MOLE_JSON_COMMAND_MODE" == "apply" ]]; then
+            if ! command -v jq > /dev/null 2>&1; then
+                mole_json_emit_error "clean" "error" "unknown" "jq is required to parse apply manifests" "" "" "" ""
+                exit_code=2
+            else
+                local manifest_path="$MOLE_JSON_APPLY_MANIFEST"
+                local tmp_manifest=""
+                if [[ "$manifest_path" == "-" ]]; then
+                    tmp_manifest=$(mktemp_file "mole_clean_apply")
+                    cat > "$tmp_manifest"
+                    manifest_path="$tmp_manifest"
+                fi
+
+                local schema_version
+                schema_version=$(jq -r '.schema_version // empty' "$manifest_path" 2> /dev/null || echo "")
+                local op
+                op=$(jq -r '.operation // empty' "$manifest_path" 2> /dev/null || echo "")
+                if [[ "$schema_version" != "1" || "$op" != "clean" ]]; then
+                    mole_json_emit_error "clean" "error" "unknown" "Invalid manifest (schema_version/operation)" "" "" "" ""
+                    exit_code=2
+                else
+                    local -a _apply_paths=()
+                    local _p
+                    while IFS= read -r _p; do
+                        [[ -z "$_p" ]] && continue
+                        _apply_paths+=("$_p")
+                    done < <(jq -r '.payload.paths[]? // empty' "$manifest_path" 2> /dev/null || true)
+                    start_section "Selected items"
+                    if [[ ${#_apply_paths[@]} -gt 0 ]]; then
+                        safe_clean "${_apply_paths[@]}" "Selected items"
+                    fi
+                    end_section
+                    exit_code=0
+                fi
+
+                [[ -n "$tmp_manifest" ]] && rm -f "$tmp_manifest" 2> /dev/null || true
+            fi
+        else
+            start_cleanup
+            hide_cursor
+            perform_cleanup || exit_code=$?
+            show_cursor
+        fi
+
+        local end_epoch
+        end_epoch=$(date -u +%s 2> /dev/null || echo "$start_epoch")
+        local duration_ms=$(((end_epoch - start_epoch) * 1000))
+
+        local skipped_total=$((whitelist_skipped_count + protected_skipped_count + missing_skipped_count + permission_denied_skipped_count + in_use_skipped_count))
+        local failed_total=${MOLE_CLEAN_JSON_FAILED_COUNT:-0}
+
+        if [[ "$MOLE_JSON_COMMAND_MODE" == "scan" ]]; then
+            mole_json_emit_event "clean" "summary" \
+                "{\"item_count\":${files_cleaned:-0},\"total_size_bytes\":$((total_size_cleaned * 1024)),\"whitelist_skipped_count\":${whitelist_skipped_count:-0},\"protected_skipped_count\":${protected_skipped_count:-0},\"permission_denied_count\":${MOLE_PERMISSION_DENIED_COUNT:-0}}"
+        else
+            mole_json_emit_event "clean" "summary" \
+                "{\"item_count\":${files_cleaned:-0},\"total_size_bytes\":$((total_size_cleaned * 1024)),\"skipped_count\":$skipped_total,\"failed_count\":$failed_total,\"whitelist_skipped_count\":${whitelist_skipped_count:-0},\"protected_skipped_count\":${protected_skipped_count:-0},\"missing_skipped_count\":${missing_skipped_count:-0},\"permission_denied_skipped_count\":${permission_denied_skipped_count:-0},\"in_use_skipped_count\":${in_use_skipped_count:-0},\"permission_denied_count\":${MOLE_PERMISSION_DENIED_COUNT:-0}}"
+        fi
+
+        local success="true"
+        [[ "$exit_code" -ne 0 ]] && success="false"
+        [[ "$canceled" == "true" ]] && success="false"
+
+        local counts_json
+        counts_json="{\"items\":${files_cleaned:-0},\"skipped\":$skipped_total,\"failed\":$failed_total,\"whitelist_skipped\":${whitelist_skipped_count:-0},\"protected_skipped\":${protected_skipped_count:-0},\"missing_skipped\":${missing_skipped_count:-0},\"permission_denied_skipped\":${permission_denied_skipped_count:-0},\"in_use_skipped\":${in_use_skipped_count:-0}}"
+        local totals_json
+        totals_json="{\"size_bytes\":$((total_size_cleaned * 1024))}"
+        mole_json_emit_operation_complete "clean" "$success" "$canceled" "$exit_code" "$duration_ms" "$counts_json" "$totals_json"
+        exit "$exit_code"
+    fi
 
     start_cleanup
     hide_cursor

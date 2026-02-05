@@ -184,6 +184,9 @@ safe_remove() {
     local path="$1"
     local silent="${2:-false}"
 
+    MOLE_LAST_REMOVE_ERROR=""
+    export MOLE_LAST_REMOVE_ERROR
+
     # Validate path
     if ! validate_path_for_deletion "$path"; then
         return 1
@@ -256,12 +259,24 @@ safe_remove() {
     else
         # Check if it's a permission error
         if [[ "$error_msg" == *"Permission denied"* ]] || [[ "$error_msg" == *"Operation not permitted"* ]]; then
+            MOLE_LAST_REMOVE_ERROR="permission_denied"
+            export MOLE_LAST_REMOVE_ERROR
+
             MOLE_PERMISSION_DENIED_COUNT=${MOLE_PERMISSION_DENIED_COUNT:-0}
             MOLE_PERMISSION_DENIED_COUNT=$((MOLE_PERMISSION_DENIED_COUNT + 1))
             export MOLE_PERMISSION_DENIED_COUNT
             debug_log "Permission denied: $path, may need Full Disk Access"
             log_operation "${MOLE_CURRENT_COMMAND:-clean}" "FAILED" "$path" "permission denied"
+        elif [[ "$error_msg" == *"Device busy"* ]] || [[ "$error_msg" == *"Resource busy"* ]]; then
+            MOLE_LAST_REMOVE_ERROR="in_use"
+            export MOLE_LAST_REMOVE_ERROR
+
+            debug_log "In use: $path"
+            log_operation "${MOLE_CURRENT_COMMAND:-clean}" "FAILED" "$path" "in use"
         else
+            MOLE_LAST_REMOVE_ERROR="unknown"
+            export MOLE_LAST_REMOVE_ERROR
+
             [[ "$silent" != "true" ]] && log_error "Failed to remove: $path"
             log_operation "${MOLE_CURRENT_COMMAND:-clean}" "FAILED" "$path" "error"
         fi
