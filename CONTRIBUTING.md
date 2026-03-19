@@ -24,6 +24,21 @@ Run tests:
 ./scripts/test.sh
 ```
 
+### Verification Authority
+
+GitHub Actions on macOS is the authoritative verification runner for `bash "scripts/test.sh"`.
+
+If you are working through an agent or Codex session, treat that environment as preparation only. Final Go-binary verification must run in one of these places:
+
+- GitHub Actions on macOS
+- A normal macOS Terminal session outside Codex
+
+Fallback local command:
+
+```bash
+cd "/Users/kinsley/Developer/_open_source/burrow-workspace/Mole" && bash "scripts/test.sh"
+```
+
 ## Code Style
 
 ### Basic Rules
@@ -181,3 +196,4 @@ For releases, GitHub Actions builds architecture-specific binaries automatically
 5. Open PR targeting `dev`
 
 CI will verify formatting, linting, and tests.
+GitHub Actions on macOS is the final verification authority for merged work.
