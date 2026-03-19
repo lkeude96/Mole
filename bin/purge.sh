@@ -20,6 +20,197 @@ source "$SCRIPT_DIR/../lib/clean/project.sh"
 
 # Configuration
 CURRENT_SECTION=""
+MOLE_JSON_COMMAND_MODE=""
+MOLE_JSON_APPLY_MANIFEST=""
+
+json_mode_setup_stdio() {
+    # Keep stdout clean for NDJSON by routing all non-JSON output to stderr.
+    exec 3>&1 1>&2
+    export MOLE_JSON_OUT_FD=3
+}
+
+maybe_trigger_purge_json_test_signal() {
+    local signal_name="${MOLE_PURGE_TEST_SIGNAL:-}"
+    [[ -z "$signal_name" ]] && return 0
+
+    kill -s "$signal_name" "$$" 2> /dev/null || true
+}
+
+purge_find_project_root() {
+    local artifact_path="$1"
+    local start_dir
+    start_dir="$(dirname "$artifact_path")"
+    local current="$start_dir"
+    local depth=0
+
+    while [[ -n "$current" && "$current" != "/" && $depth -lt 12 ]]; do
+        local indicator
+        for indicator in "${MONOREPO_INDICATORS[@]}"; do
+            if [[ -e "$current/$indicator" ]]; then
+                echo "$current"
+                return 0
+            fi
+        done
+        for indicator in "${PROJECT_INDICATORS[@]}"; do
+            if [[ -e "$current/$indicator" ]]; then
+                echo "$current"
+                return 0
+            fi
+        done
+        current="$(dirname "$current")"
+        depth=$((depth + 1))
+    done
+
+    echo "$start_dir"
+    return 0
+}
+
+purge_emit_summary() {
+    local count="$1"
+    local size_bytes="$2"
+    mole_json_emit_event "purge" "summary" \
+        "{\"artifact_count\":$count,\"total_size_bytes\":$size_bytes}"
+}
+
+purge_json_scan() {
+    local stats_dir="${XDG_CACHE_HOME:-$HOME/.cache}/mole"
+    ensure_user_dir "$stats_dir"
+
+    local source="auto"
+    if [[ -f "$PURGE_CONFIG_FILE" ]]; then
+        if grep -Eq "^[[:space:]]*[^#[:space:]]" "$PURGE_CONFIG_FILE" 2> /dev/null; then
+            source="config"
+        fi
+    fi
+
+    local root
+    for root in "${PURGE_SEARCH_PATHS[@]}"; do
+        [[ -d "$root" ]] || continue
+        mole_json_emit_event "purge" "purge_path" \
+            "{\"root\":$(mole_json_quote "$root"),\"source\":$(mole_json_quote "$source")}"
+    done
+
+    local all_items
+    all_items=$(mktemp_file "mole_purge_scan")
+    local scan_out
+
+    for root in "${PURGE_SEARCH_PATHS[@]}"; do
+        [[ -d "$root" ]] || continue
+        scan_out=$(mktemp_file "mole_purge_scan_root")
+        scan_purge_targets "$root" "$scan_out" || true
+        if [[ -f "$scan_out" ]]; then
+            cat "$scan_out" >> "$all_items" 2> /dev/null || true
+        fi
+        rm -f "$scan_out" 2> /dev/null || true
+    done
+
+    local uniq_items
+    uniq_items=$(mktemp_file "mole_purge_scan_uniq")
+    sort -u "$all_items" > "$uniq_items" 2> /dev/null || true
+    rm -f "$all_items" 2> /dev/null || true
+
+    local total_count=0
+    local total_size=0
+    local item
+    while IFS= read -r item; do
+        [[ -z "$item" ]] && continue
+        [[ -d "$item" ]] || continue
+
+        local size_kb
+        size_kb=$(get_dir_size_kb "$item" 2> /dev/null || echo "0")
+        [[ ! "$size_kb" =~ ^[0-9]+$ ]] && size_kb=0
+        local size_bytes=$((size_kb * 1024))
+
+        local project_root
+        project_root=$(purge_find_project_root "$item")
+        local project_name
+        project_name=$(basename "$project_root")
+        local artifact_type
+        artifact_type=$(basename "$item")
+
+        local recent=false
+        if is_recently_modified "$item"; then
+            recent=true
+        fi
+
+        mole_json_emit_event "purge" "artifact_found" \
+            "{\"path\":$(mole_json_quote "$item"),\"project_root\":$(mole_json_quote "$project_root"),\"project_name\":$(mole_json_quote "$project_name"),\"artifact_type\":$(mole_json_quote "$artifact_type"),\"size_bytes\":$size_bytes,\"recently_modified\":$recent}"
+
+        total_count=$((total_count + 1))
+        total_size=$((total_size + size_bytes))
+    done < "$uniq_items"
+    rm -f "$uniq_items" 2> /dev/null || true
+
+    purge_emit_summary "$total_count" "$total_size"
+    return 0
+}
+
+purge_json_apply() {
+    local manifest="$1"
+    if ! command -v jq > /dev/null 2>&1; then
+        mole_json_emit_error "purge" "error" "unknown" "jq is required to parse apply manifests" "" "" "" ""
+        return 2
+    fi
+
+    local schema_version
+    schema_version=$(jq -r '.schema_version // empty' "$manifest" 2> /dev/null || echo "")
+    local op
+    op=$(jq -r '.operation // empty' "$manifest" 2> /dev/null || echo "")
+    if [[ "$schema_version" != "1" || "$op" != "purge" ]]; then
+        mole_json_emit_error "purge" "error" "unknown" "Invalid manifest (schema_version/operation)" "" "" "" ""
+        return 2
+    fi
+
+    local -a paths=()
+    local p
+    while IFS= read -r p; do
+        [[ -z "$p" ]] && continue
+        paths+=("$p")
+    done < <(jq -r '.payload.paths[]? // empty' "$manifest" 2> /dev/null || true)
+
+    local removed_count=0
+    local removed_size=0
+    local path
+    for path in "${paths[@]}"; do
+        [[ -z "$path" ]] && continue
+
+        if [[ ! -e "$path" ]]; then
+            mole_json_emit_event "purge" "artifact_skipped" \
+                "{\"path\":$(mole_json_quote "$path"),\"reason\":$(mole_json_quote "missing")}"
+            continue
+        fi
+
+        if is_protected_purge_artifact "$path"; then
+            mole_json_emit_event "purge" "artifact_skipped" \
+                "{\"path\":$(mole_json_quote "$path"),\"reason\":$(mole_json_quote "protected")}"
+            continue
+        fi
+
+        if ! validate_path_for_deletion "$path"; then
+            mole_json_emit_event "purge" "artifact_skipped" \
+                "{\"path\":$(mole_json_quote "$path"),\"reason\":$(mole_json_quote "protected")}"
+            continue
+        fi
+
+        local size_kb
+        size_kb=$(get_dir_size_kb "$path" 2> /dev/null || echo "0")
+        [[ ! "$size_kb" =~ ^[0-9]+$ ]] && size_kb=0
+        local size_bytes=$((size_kb * 1024))
+
+        if safe_remove "$path" true; then
+            mole_json_emit_event "purge" "artifact_removed" \
+                "{\"path\":$(mole_json_quote "$path"),\"size_bytes\":$size_bytes}"
+            removed_count=$((removed_count + 1))
+            removed_size=$((removed_size + size_bytes))
+        else
+            mole_json_emit_event "purge" "artifact_failed" \
+                "{\"path\":$(mole_json_quote "$path"),\"reason\":$(mole_json_quote "unknown")}"
+        fi
+    done
+
+    purge_emit_summary "$removed_count" "$removed_size"
+    return 0
+}
 
 # Section management
 start_section() {
@@ -248,8 +439,9 @@ main() {
     trap 'show_cursor; exit 130' INT TERM
 
     # Parse arguments
-    for arg in "$@"; do
-        case "$arg" in
+    local -a orig_argv=("$@")
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
             "--paths")
                 source "$SCRIPT_DIR/../lib/manage/purge_paths.sh"
                 manage_purge_paths
@@ -261,14 +453,94 @@ main() {
                 ;;
             "--debug")
                 export MO_DEBUG=1
+                shift
+                ;;
+            "--json-scan")
+                MOLE_JSON_COMMAND_MODE="scan"
+                shift
+                ;;
+            "--apply")
+                MOLE_JSON_COMMAND_MODE="apply"
+                MOLE_JSON_APPLY_MANIFEST="${2:-}"
+                if [[ -z "$MOLE_JSON_APPLY_MANIFEST" ]]; then
+                    echo "--apply requires a manifest path" >&2
+                    exit 2
+                fi
+                shift 2
                 ;;
             *)
-                echo "Unknown option: $arg"
+                echo "Unknown option: $1"
                 echo "Use 'mo purge --help' for usage information"
                 exit 1
                 ;;
         esac
     done
+
+    if [[ -n "${MOLE_JSON_COMMAND_MODE:-}" ]]; then
+        if ! mole_json_enabled; then
+            echo "JSON contract mode requires MOLE_OUTPUT=json" >&2
+            exit 2
+        fi
+
+        json_mode_setup_stdio
+
+        local start_epoch
+        start_epoch=$(date -u +%s 2> /dev/null || echo "0")
+
+        local canceled_emitted=0
+        emit_purge_json_canceled() {
+            local signal_exit="$1"
+
+            if [[ "${canceled_emitted:-0}" -eq 1 ]]; then
+                exit "$signal_exit"
+            fi
+            canceled_emitted=1
+
+            local cancel_epoch
+            cancel_epoch=$(date -u +%s 2> /dev/null || echo "$start_epoch")
+            local cancel_duration_ms=$(((cancel_epoch - start_epoch) * 1000))
+
+            mole_json_emit_error "purge" "error" "canceled" "Operation canceled" "" "" "" ""
+            mole_json_emit_operation_complete "purge" "false" "true" "$signal_exit" "$cancel_duration_ms" "{}" "{}"
+            exit "$signal_exit"
+        }
+
+        trap 'emit_purge_json_canceled 130' INT
+        trap 'emit_purge_json_canceled 143' TERM
+
+        local exit_code=0
+        if [[ "$MOLE_JSON_COMMAND_MODE" == "scan" ]]; then
+            mole_json_emit_operation_start "purge" "scan" "true" "$0" "${orig_argv[@]}"
+            maybe_trigger_purge_json_test_signal
+            set +e
+            purge_json_scan
+            exit_code=$?
+            set -e
+        else
+            mole_json_emit_operation_start "purge" "apply" "false" "$0" "${orig_argv[@]}"
+            maybe_trigger_purge_json_test_signal
+            local manifest_path="$MOLE_JSON_APPLY_MANIFEST"
+            local tmp_manifest=""
+            if [[ "$manifest_path" == "-" ]]; then
+                tmp_manifest=$(mktemp_file "mole_purge_apply")
+                cat > "$tmp_manifest"
+                manifest_path="$tmp_manifest"
+            fi
+            set +e
+            purge_json_apply "$manifest_path"
+            exit_code=$?
+            set -e
+            [[ -n "$tmp_manifest" ]] && rm -f "$tmp_manifest" 2> /dev/null || true
+        fi
+        local end_epoch
+        end_epoch=$(date -u +%s 2> /dev/null || echo "$start_epoch")
+        local duration_ms=$(((end_epoch - start_epoch) * 1000))
+
+        local success="true"
+        [[ "$exit_code" -ne 0 ]] && success="false"
+        mole_json_emit_operation_complete "purge" "$success" "false" "$exit_code" "$duration_ms" "{}" "{}"
+        exit "$exit_code"
+    fi
 
     start_purge
     hide_cursor

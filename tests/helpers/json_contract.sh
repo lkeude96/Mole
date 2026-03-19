@@ -11,6 +11,28 @@ require_jq() {
     fi
 }
 
+assert_first_event() {
+    local ndjson="$1"
+    local expected="$2"
+    local actual
+    actual=$(printf '%s\n' "$ndjson" | jq -r 'select(.event != null) | .event' | head -n 1)
+    [[ "$actual" == "$expected" ]]
+}
+
+assert_last_event() {
+    local ndjson="$1"
+    local expected="$2"
+    local actual
+    actual=$(printf '%s\n' "$ndjson" | jq -r 'select(.event != null) | .event' | tail -n 1)
+    [[ "$actual" == "$expected" ]]
+}
+
+assert_event_present() {
+    local ndjson="$1"
+    local expected="$2"
+    printf '%s\n' "$ndjson" | jq -e --arg event "$expected" 'select(.event == $event)' > /dev/null
+}
+
 assert_ndjson_envelope() {
     local ndjson="$1"
     local prev_seq=0
@@ -34,4 +56,3 @@ assert_ndjson_envelope() {
         prev_seq="$seq"
     done <<< "$ndjson"
 }
-

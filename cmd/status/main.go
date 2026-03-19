@@ -192,6 +192,10 @@ func animTickWithSpeed(cpuUsage float64) tea.Cmd {
 }
 
 func main() {
+	if os.Getenv("MOLE_OUTPUT") == "json" {
+		os.Exit(runJSONStatus())
+	}
+
 	p := tea.NewProgram(newModel(), tea.WithAltScreen())
 	if _, err := p.Run(); err != nil {
 		fmt.Fprintf(os.Stderr, "system status error: %v\n", err)

@@ -366,25 +366,212 @@ handle_interrupt() {
     exit 130
 }
 
+maybe_trigger_optimize_json_test_signal() {
+    local signal_name="${MOLE_OPTIMIZE_TEST_SIGNAL:-}"
+    [[ -z "$signal_name" ]] && return 0
+
+    kill -s "$signal_name" "$$" 2> /dev/null || true
+}
+
 main() {
     # Set current command for operation logging
     export MOLE_CURRENT_COMMAND="optimize"
 
+    local -a orig_argv=("$@")
+    local json_mode=""
+    local json_apply_manifest=""
+
     local health_json
-    for arg in "$@"; do
-        case "$arg" in
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
             "--debug")
                 export MO_DEBUG=1
+                shift
                 ;;
             "--dry-run")
                 export MOLE_DRY_RUN=1
+                shift
                 ;;
             "--whitelist")
                 manage_whitelist "optimize"
                 exit 0
                 ;;
+            "--json-scan")
+                json_mode="scan"
+                shift
+                ;;
+            "--apply")
+                json_mode="apply"
+                json_apply_manifest="${2:-}"
+                if [[ -z "$json_apply_manifest" ]]; then
+                    log_error "--apply requires a manifest path"
+                    exit 2
+                fi
+                shift 2
+                ;;
+            *)
+                # Preserve unknown args for standard (non-JSON) flow below.
+                shift
+                ;;
         esac
     done
+
+    if [[ -n "$json_mode" ]]; then
+        if ! mole_json_enabled; then
+            log_error "JSON contract mode requires MOLE_OUTPUT=json"
+            exit 2
+        fi
+
+        # Keep stdout clean for NDJSON by routing all non-JSON output to stderr.
+        exec 3>&1 1>&2
+        export MOLE_JSON_OUT_FD=3
+
+        local start_epoch
+        start_epoch=$(date -u +%s 2> /dev/null || echo "0")
+
+        local canceled_emitted=0
+        emit_optimize_json_canceled() {
+            local signal_exit="$1"
+
+            if [[ "${canceled_emitted:-0}" -eq 1 ]]; then
+                exit "$signal_exit"
+            fi
+            canceled_emitted=1
+
+            local cancel_epoch
+            cancel_epoch=$(date -u +%s 2> /dev/null || echo "$start_epoch")
+            local cancel_duration_ms=$(((cancel_epoch - start_epoch) * 1000))
+
+            mole_json_emit_error "optimize" "error" "canceled" "Operation canceled" "" "" "" ""
+            mole_json_emit_operation_complete "optimize" "false" "true" "$signal_exit" "$cancel_duration_ms" "{}" "{}"
+            exit "$signal_exit"
+        }
+
+        trap 'emit_optimize_json_canceled 130' INT
+        trap 'emit_optimize_json_canceled 143' TERM
+
+        if [[ "$json_mode" == "scan" ]]; then
+            mole_json_emit_operation_start "optimize" "scan" "true" "$0" "${orig_argv[@]}"
+        else
+            mole_json_emit_operation_start "optimize" "apply" "false" "$0" "${orig_argv[@]}"
+        fi
+
+        maybe_trigger_optimize_json_test_signal
+
+        if ! command -v jq > /dev/null 2>&1; then
+            mole_json_emit_error "optimize" "error" "unknown" "Missing dependency: jq" "" "" "" ""
+            mole_json_emit_operation_complete "optimize" "false" "false" "1" "0" "{}" "{}"
+            exit 1
+        fi
+
+        if ! command -v bc > /dev/null 2>&1; then
+            mole_json_emit_error "optimize" "error" "unknown" "Missing dependency: bc" "" "" "" ""
+            mole_json_emit_operation_complete "optimize" "false" "false" "1" "0" "{}" "{}"
+            exit 1
+        fi
+
+        if ! health_json=$(generate_health_json 2> /dev/null); then
+            mole_json_emit_error "optimize" "error" "unknown" "Failed to collect system health data" "" "" "" ""
+            mole_json_emit_operation_complete "optimize" "false" "false" "1" "0" "{}" "{}"
+            exit 1
+        fi
+
+        if [[ "$json_mode" == "scan" ]]; then
+            local count=0
+            while IFS= read -r opt_json; do
+                [[ -z "$opt_json" ]] && continue
+                local category name desc action safe
+                category=$(echo "$opt_json" | jq -r '.category // "system"' 2> /dev/null || echo "system")
+                name=$(echo "$opt_json" | jq -r '.name // ""' 2> /dev/null || echo "")
+                desc=$(echo "$opt_json" | jq -r '.description // ""' 2> /dev/null || echo "")
+                action=$(echo "$opt_json" | jq -r '.action // ""' 2> /dev/null || echo "")
+                safe=$(echo "$opt_json" | jq -r '.safe // false' 2> /dev/null || echo "false")
+
+                mole_json_emit_event "optimize" "optimization_available" \
+                    "{\"category\":$(mole_json_quote "$category"),\"action\":$(mole_json_quote "$action"),\"name\":$(mole_json_quote "$name"),\"description\":$(mole_json_quote "$desc"),\"safe\":$safe}"
+                count=$((count + 1))
+            done < <(echo "$health_json" | jq -c '.optimizations[]' 2> /dev/null || true)
+
+            mole_json_emit_event "optimize" "summary" "{\"count\":$count}"
+            mole_json_emit_operation_complete "optimize" "true" "false" "0" "0" "{}" "{}"
+            exit 0
+        fi
+
+        # apply
+        local manifest_path="$json_apply_manifest"
+        local tmp_manifest=""
+        if [[ "$manifest_path" == "-" ]]; then
+            tmp_manifest=$(mktemp_file "mole_optimize_apply")
+            cat > "$tmp_manifest"
+            manifest_path="$tmp_manifest"
+        fi
+
+        local schema_version
+        schema_version=$(jq -r '.schema_version // empty' "$manifest_path" 2> /dev/null || echo "")
+        local op
+        op=$(jq -r '.operation // empty' "$manifest_path" 2> /dev/null || echo "")
+        if [[ "$schema_version" != "1" || "$op" != "optimize" ]]; then
+            mole_json_emit_error "optimize" "error" "unknown" "Invalid manifest (schema_version/operation)" "" "" "" ""
+            [[ -n "$tmp_manifest" ]] && rm -f "$tmp_manifest" 2> /dev/null || true
+            mole_json_emit_operation_complete "optimize" "false" "false" "2" "0" "{}" "{}"
+            exit 2
+        fi
+
+        local -a actions=()
+        local action_line
+        while IFS= read -r action_line; do
+            [[ -z "$action_line" ]] && continue
+            actions+=("$action_line")
+        done < <(jq -r '.payload.actions[]? // empty' "$manifest_path" 2> /dev/null || true)
+        [[ -n "$tmp_manifest" ]] && rm -f "$tmp_manifest" 2> /dev/null || true
+
+        local can_sudo=false
+        if sudo -n true 2> /dev/null; then
+            can_sudo=true
+        fi
+
+        local any_failed=false
+        local action
+        for action in "${actions[@]}"; do
+            [[ -z "$action" ]] && continue
+
+            # Lookup metadata for name/description/path.
+            local opt
+            opt=$(echo "$health_json" | jq -c --arg a "$action" '.optimizations[] | select(.action == $a) | . ' 2> /dev/null | head -n 1 || true)
+            local name desc path
+            name=$(echo "${opt:-{}}" | jq -r '.name // $a' --arg a "$action" 2> /dev/null || echo "$action")
+            desc=$(echo "${opt:-{}}" | jq -r '.description // ""' 2> /dev/null || echo "")
+            path=$(echo "${opt:-{}}" | jq -r '.path // ""' 2> /dev/null || echo "")
+
+            mole_json_emit_event "optimize" "optimization_start" \
+                "{\"action\":$(mole_json_quote "$action"),\"name\":$(mole_json_quote "$name")}"
+
+            if [[ "$can_sudo" != "true" && "${MOLE_DRY_RUN:-0}" != "1" ]]; then
+                mole_json_emit_event "optimize" "optimization_complete" \
+                    "{\"action\":$(mole_json_quote "$action"),\"success\":false,\"message\":$(mole_json_quote "Admin privileges required (sudo -n unavailable)")}"
+                any_failed=true
+                continue
+            fi
+
+            if execute_optimization "$action" "$path"; then
+                mole_json_emit_event "optimize" "optimization_complete" \
+                    "{\"action\":$(mole_json_quote "$action"),\"success\":true,\"message\":$(mole_json_quote "$desc")}"
+            else
+                mole_json_emit_event "optimize" "optimization_complete" \
+                    "{\"action\":$(mole_json_quote "$action"),\"success\":false,\"message\":$(mole_json_quote "Failed")}"
+                any_failed=true
+            fi
+        done
+
+        local end_epoch
+        end_epoch=$(date -u +%s 2> /dev/null || echo "$start_epoch")
+        local duration_ms=$(((end_epoch - start_epoch) * 1000))
+        local success="true"
+        [[ "$any_failed" == "true" ]] && success="false"
+        mole_json_emit_operation_complete "optimize" "$success" "false" "$([[ "$any_failed" == "true" ]] && echo 1 || echo 0)" "$duration_ms" "{}" "{}"
+        [[ "$any_failed" == "true" ]] && exit 1
+        exit 0
+    fi
 
     log_operation_session_start "optimize"
 

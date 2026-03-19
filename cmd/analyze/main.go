@@ -127,6 +127,10 @@ func (m model) inOverviewMode() bool {
 }
 
 func main() {
+	if os.Getenv("MOLE_OUTPUT") == "json" {
+		os.Exit(runJSONAnalyze())
+	}
+
 	target := os.Getenv("MO_ANALYZE_PATH")
 	if target == "" && len(os.Args) > 1 {
 		target = os.Args[1]

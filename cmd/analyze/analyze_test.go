@@ -91,10 +91,7 @@ func TestScanPathConcurrentBasic(t *testing.T) {
 }
 
 func TestDeletePathWithProgress(t *testing.T) {
-	// Skip in CI environments where Finder may not be available.
-	if os.Getenv("CI") != "" {
-		t.Skip("Skipping Finder-dependent test in CI")
-	}
+	requireFinder(t)
 
 	parent := t.TempDir()
 	target := filepath.Join(parent, "target")

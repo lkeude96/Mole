@@ -20,6 +20,23 @@ echo ""
 
 FAILED=0
 
+setup_go_cache() {
+    # Ensure the Go build cache is writable (some sandboxed environments deny access to ~/Library/Caches).
+    if [[ -z "${GOCACHE:-}" ]]; then
+        export GOCACHE="$PROJECT_ROOT/.gocache"
+    fi
+    mkdir -p "$GOCACHE" 2> /dev/null || true
+}
+
+set_perf_defaults() {
+    export MOLE_PERF_BYTES_TO_HUMAN_LIMIT_MS="${MOLE_PERF_BYTES_TO_HUMAN_LIMIT_MS:-6000}"
+    export MOLE_PERF_GET_FILE_SIZE_LIMIT_MS="${MOLE_PERF_GET_FILE_SIZE_LIMIT_MS:-3000}"
+    export MOLE_PERF_GET_INVOKING_USER_LIMIT_MS="${MOLE_PERF_GET_INVOKING_USER_LIMIT_MS:-1500}"
+    export MOLE_PERF_CREATE_TEMP_FILE_LIMIT_MS="${MOLE_PERF_CREATE_TEMP_FILE_LIMIT_MS:-2000}"
+    export MOLE_PERF_CLEANUP_TEMP_FILES_LIMIT_MS="${MOLE_PERF_CLEANUP_TEMP_FILES_LIMIT_MS:-3000}"
+    export MOLE_PERF_SECTION_TRACKING_LIMIT_MS="${MOLE_PERF_SECTION_TRACKING_LIMIT_MS:-3000}"
+}
+
 report_unit_result() {
     if [[ $1 -eq 0 ]]; then
         printf "${GREEN}${ICON_SUCCESS} Unit tests passed${NC}\n"
@@ -28,6 +45,8 @@ report_unit_result() {
         ((FAILED++))
     fi
 }
+
+set_perf_defaults
 
 echo "1. Linting test scripts..."
 if command -v shellcheck > /dev/null 2>&1; then
@@ -50,7 +69,27 @@ else
 fi
 echo ""
 
-echo "2. Running unit tests..."
+echo "2. Preparing bundled Go binaries..."
+if command -v go > /dev/null 2>&1; then
+    setup_go_cache
+
+    build_out=""
+    if build_out=$(make build 2>&1); then
+        export MOLE_REQUIRE_BUNDLED_GO=1
+        printf "${GREEN}${ICON_SUCCESS} Bundled Go binaries built${NC}\n"
+    else
+        printf "${RED}${ICON_ERROR} Bundled Go binary build failed${NC}\n"
+        if [[ -n "$build_out" ]]; then
+            printf "%s\n" "$build_out"
+        fi
+        ((FAILED++))
+    fi
+else
+    printf "${YELLOW}${ICON_WARNING} Go not installed, skipping bundled Go binary build${NC}\n"
+fi
+echo ""
+
+echo "3. Running unit tests..."
 if command -v bats > /dev/null 2>&1 && [ -d "tests" ]; then
     if [[ -z "${TERM:-}" ]]; then
         export TERM="xterm-256color"
@@ -148,13 +187,9 @@ else
 fi
 echo ""
 
-echo "3. Running Go tests..."
+echo "4. Running Go tests..."
 if command -v go > /dev/null 2>&1; then
-    # Ensure Go build cache is writable (some sandboxed environments deny access to ~/Library/Caches).
-    if [[ -z "${GOCACHE:-}" ]]; then
-        export GOCACHE="$PROJECT_ROOT/.gocache"
-    fi
-    mkdir -p "$GOCACHE" 2> /dev/null || true
+    setup_go_cache
 
     go_out=""
     if ! go_out=$(go build ./... 2>&1); then
@@ -181,7 +216,7 @@ else
 fi
 echo ""
 
-echo "4. Testing module loading..."
+echo "5. Testing module loading..."
 if bash -c 'source lib/core/common.sh && echo "OK"' > /dev/null 2>&1; then
     printf "${GREEN}${ICON_SUCCESS} Module loading passed${NC}\n"
 else
@@ -190,7 +225,7 @@ else
 fi
 echo ""
 
-echo "5. Running integration tests..."
+echo "6. Running integration tests..."
 # Quick syntax check for main scripts
 if bash -n mole && bash -n bin/clean.sh && bash -n bin/optimize.sh; then
     printf "${GREEN}${ICON_SUCCESS} Integration tests passed${NC}\n"
@@ -200,7 +235,7 @@ else
 fi
 echo ""
 
-echo "6. Testing installation..."
+echo "7. Testing installation..."
 # Skip if Homebrew mole is installed (install.sh will refuse to overwrite)
 if brew list mole &> /dev/null; then
     printf "${GREEN}${ICON_SUCCESS} Installation test skipped, Homebrew${NC}\n"

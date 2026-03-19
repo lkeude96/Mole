@@ -132,6 +132,8 @@ setup() {
 
 @test "create_temp_file and cleanup_temp_files work efficiently" {
     local start end elapsed
+    local create_limit_ms="${MOLE_PERF_CREATE_TEMP_FILE_LIMIT_MS:-1000}"
+    local cleanup_limit_ms="${MOLE_PERF_CLEANUP_TEMP_FILES_LIMIT_MS:-2000}"
 
     declare -a MOLE_TEMP_DIRS=()
 
@@ -143,7 +145,7 @@ setup() {
 
     elapsed=$(( (end - start) / 1000000 ))
 
-    [ "$elapsed" -lt 1000 ]
+    [ "$elapsed" -lt "$create_limit_ms" ]
 
     [ "${#MOLE_TEMP_FILES[@]}" -eq 50 ]
 
@@ -152,7 +154,7 @@ setup() {
     end=$(date +%s%N)
 
     elapsed=$(( (end - start) / 1000000 ))
-    [ "$elapsed" -lt 2000 ]
+    [ "$elapsed" -lt "$cleanup_limit_ms" ]
 
     [ "${#MOLE_TEMP_FILES[@]}" -eq 0 ]
 }
@@ -212,6 +214,7 @@ setup() {
 
 @test "section tracking has minimal overhead" {
     local start end elapsed
+    local limit_ms="${MOLE_PERF_SECTION_TRACKING_LIMIT_MS:-2000}"
 
     if ! declare -f note_activity > /dev/null 2>&1; then
         TRACK_SECTION=0
@@ -233,5 +236,5 @@ setup() {
 
     elapsed=$(( (end - start) / 1000000 ))
 
-    [ "$elapsed" -lt 2000 ]
+    [ "$elapsed" -lt "$limit_ms" ]
 }

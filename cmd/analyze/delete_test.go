@@ -7,10 +7,7 @@ import (
 )
 
 func TestTrashPathWithProgress(t *testing.T) {
-	// Skip in CI environments where Finder may not be available.
-	if os.Getenv("CI") != "" {
-		t.Skip("Skipping Finder-dependent test in CI")
-	}
+	requireFinder(t)
 
 	parent := t.TempDir()
 	target := filepath.Join(parent, "target")
@@ -42,10 +39,7 @@ func TestTrashPathWithProgress(t *testing.T) {
 }
 
 func TestDeleteMultiplePathsCmdHandlesParentChild(t *testing.T) {
-	// Skip in CI environments where Finder may not be available.
-	if os.Getenv("CI") != "" {
-		t.Skip("Skipping Finder-dependent test in CI")
-	}
+	requireFinder(t)
 
 	base := t.TempDir()
 	parent := filepath.Join(base, "parent")

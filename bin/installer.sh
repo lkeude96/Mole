@@ -16,6 +16,9 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/../lib/core/common.sh"
 source "$SCRIPT_DIR/../lib/ui/menu_paginated.sh"
 
+MOLE_JSON_COMMAND_MODE=""
+MOLE_JSON_APPLY_MANIFEST=""
+
 cleanup() {
     if [[ "${IN_ALT_SCREEN:-0}" == "1" ]]; then
         leave_alt_screen
@@ -26,6 +29,116 @@ cleanup() {
 }
 trap cleanup EXIT
 trap 'trap - EXIT; cleanup; exit 130' INT TERM
+
+json_mode_setup_stdio() {
+    # Keep stdout clean for NDJSON by routing all non-JSON output to stderr.
+    exec 3>&1 1>&2
+    export MOLE_JSON_OUT_FD=3
+}
+
+maybe_trigger_installer_json_test_signal() {
+    local signal_name="${MOLE_INSTALLER_TEST_SIGNAL:-}"
+    [[ -z "$signal_name" ]] && return 0
+
+    kill -s "$signal_name" "$$" 2> /dev/null || true
+}
+
+json_mode_emit_summary() {
+    local count="$1"
+    local size_bytes="$2"
+    mole_json_emit_event "installer" "summary" \
+        "{\"installer_count\":$count,\"total_size_bytes\":$size_bytes}"
+}
+
+json_scan_installers() {
+    local total_count=0
+    local total_size=0
+
+    while IFS= read -r file; do
+        [[ -z "$file" ]] && continue
+        local size=0
+        size=$(get_file_size "$file" 2> /dev/null || echo "0")
+        [[ ! "$size" =~ ^[0-9]+$ ]] && size=0
+        local source
+        source=$(get_source_display "$file")
+
+        local display_name
+        display_name=$(basename "$file")
+        if [[ "$source" == "Homebrew" ]]; then
+            if [[ "$display_name" =~ ^[0-9a-f]{64}--(.*) ]]; then
+                display_name="${BASH_REMATCH[1]}"
+            fi
+        fi
+
+        mole_json_emit_event "installer" "installer_found" \
+            "{\"path\":$(mole_json_quote "$file"),\"display_name\":$(mole_json_quote "$display_name"),\"source\":$(mole_json_quote "$source"),\"size_bytes\":$size}"
+
+        total_size=$((total_size + size))
+        total_count=$((total_count + 1))
+    done < <(scan_all_installers | sort -u)
+
+    json_mode_emit_summary "$total_count" "$total_size"
+    return 0
+}
+
+json_apply_installers() {
+    local manifest="$1"
+    if ! command -v jq > /dev/null 2>&1; then
+        mole_json_emit_error "installer" "error" "unknown" "jq is required to parse apply manifests" "" "" "" ""
+        return 2
+    fi
+
+    local schema_version
+    schema_version=$(jq -r '.schema_version // empty' "$manifest" 2> /dev/null || echo "")
+    local op
+    op=$(jq -r '.operation // empty' "$manifest" 2> /dev/null || echo "")
+    if [[ "$schema_version" != "1" || "$op" != "installer" ]]; then
+        mole_json_emit_error "installer" "error" "unknown" "Invalid manifest (schema_version/operation)" "" "" "" ""
+        return 2
+    fi
+
+    local -a paths=()
+    local p
+    while IFS= read -r p; do
+        [[ -z "$p" ]] && continue
+        paths+=("$p")
+    done < <(jq -r '.payload.paths[]? // empty' "$manifest" 2> /dev/null || true)
+    local removed=0
+    local removed_size=0
+
+    local path
+    for path in "${paths[@]}"; do
+        [[ -z "$path" ]] && continue
+        if [[ ! -e "$path" ]]; then
+            mole_json_emit_event "installer" "installer_skipped" \
+                "{\"path\":$(mole_json_quote "$path"),\"reason\":$(mole_json_quote "missing")}"
+            continue
+        fi
+
+        if ! validate_path_for_deletion "$path"; then
+            mole_json_emit_event "installer" "installer_skipped" \
+                "{\"path\":$(mole_json_quote "$path"),\"reason\":$(mole_json_quote "protected")}"
+            continue
+        fi
+
+        local size=0
+        size=$(get_file_size "$path" 2> /dev/null || echo "0")
+        [[ ! "$size" =~ ^[0-9]+$ ]] && size=0
+
+        if safe_remove "$path" true; then
+            mole_json_emit_event "installer" "installer_removed" \
+                "{\"path\":$(mole_json_quote "$path"),\"size_bytes\":$size}"
+            removed=$((removed + 1))
+            removed_size=$((removed_size + size))
+        else
+            mole_json_emit_event "installer" "installer_failed" \
+                "{\"path\":$(mole_json_quote "$path"),\"reason\":$(mole_json_quote "unknown")}"
+        fi
+    done
+
+    json_mode_emit_summary "$removed" "$removed_size"
+    return 0
+}
 
 # Scan configuration
 readonly INSTALLER_SCAN_MAX_DEPTH_DEFAULT=2
@@ -666,17 +779,98 @@ show_summary() {
 }
 
 main() {
-    for arg in "$@"; do
-        case "$arg" in
+    local -a orig_argv=("$@")
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
             "--debug")
                 export MO_DEBUG=1
+                shift
+                ;;
+            "--json-scan")
+                MOLE_JSON_COMMAND_MODE="scan"
+                shift
+                ;;
+            "--apply")
+                MOLE_JSON_COMMAND_MODE="apply"
+                MOLE_JSON_APPLY_MANIFEST="${2:-}"
+                if [[ -z "$MOLE_JSON_APPLY_MANIFEST" ]]; then
+                    echo "--apply requires a manifest path" >&2
+                    exit 2
+                fi
+                shift 2
                 ;;
             *)
-                echo "Unknown option: $arg"
+                echo "Unknown option: $1"
                 exit 1
                 ;;
         esac
     done
+
+    if [[ -n "${MOLE_JSON_COMMAND_MODE:-}" ]]; then
+        if ! mole_json_enabled; then
+            echo "JSON contract mode requires MOLE_OUTPUT=json" >&2
+            exit 2
+        fi
+
+        json_mode_setup_stdio
+
+        local start_epoch
+        start_epoch=$(date -u +%s 2> /dev/null || echo "0")
+
+        local canceled_emitted=0
+        emit_installer_json_canceled() {
+            local signal_exit="$1"
+
+            if [[ "${canceled_emitted:-0}" -eq 1 ]]; then
+                exit "$signal_exit"
+            fi
+            canceled_emitted=1
+
+            local cancel_epoch
+            cancel_epoch=$(date -u +%s 2> /dev/null || echo "$start_epoch")
+            local cancel_duration_ms=$(((cancel_epoch - start_epoch) * 1000))
+
+            mole_json_emit_error "installer" "error" "canceled" "Operation canceled" "" "" "" ""
+            mole_json_emit_operation_complete "installer" "false" "true" "$signal_exit" "$cancel_duration_ms" "{}" "{}"
+            exit "$signal_exit"
+        }
+
+        trap 'emit_installer_json_canceled 130' INT
+        trap 'emit_installer_json_canceled 143' TERM
+
+        local exit_code=0
+        if [[ "$MOLE_JSON_COMMAND_MODE" == "scan" ]]; then
+            mole_json_emit_operation_start "installer" "scan" "true" "$0" "${orig_argv[@]}"
+            maybe_trigger_installer_json_test_signal
+            set +e
+            json_scan_installers
+            exit_code=$?
+            set -e
+        else
+            mole_json_emit_operation_start "installer" "apply" "false" "$0" "${orig_argv[@]}"
+            maybe_trigger_installer_json_test_signal
+            local manifest_path="$MOLE_JSON_APPLY_MANIFEST"
+            local tmp_manifest=""
+            if [[ "$manifest_path" == "-" ]]; then
+                tmp_manifest=$(mktemp_file "mole_installer_apply")
+                cat > "$tmp_manifest"
+                manifest_path="$tmp_manifest"
+            fi
+            set +e
+            json_apply_installers "$manifest_path"
+            exit_code=$?
+            set -e
+            [[ -n "$tmp_manifest" ]] && rm -f "$tmp_manifest" 2> /dev/null || true
+        fi
+        local end_epoch
+        end_epoch=$(date -u +%s 2> /dev/null || echo "$start_epoch")
+        local duration_ms=$(((end_epoch - start_epoch) * 1000))
+
+        local success="true"
+        [[ "$exit_code" -ne 0 ]] && success="false"
+        mole_json_emit_operation_complete "installer" "$success" "false" "$exit_code" "$duration_ms" "{}" "{}"
+        exit "$exit_code"
+    fi
 
     hide_cursor
     perform_installers

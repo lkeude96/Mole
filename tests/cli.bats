@@ -47,6 +47,25 @@ SCRIPT
 setup() {
     rm -rf "$HOME/.config"
     mkdir -p "$HOME"
+
+    # shellcheck source=tests/helpers/json_contract.sh
+    source "$PROJECT_ROOT/tests/helpers/json_contract.sh"
+}
+
+require_bundled_go_binary() {
+    local binary_path="$1"
+    local binary_name="$2"
+
+    if [[ -x "$binary_path" ]]; then
+        return 0
+    fi
+
+    if [[ "${MOLE_REQUIRE_BUNDLED_GO:-0}" == "1" ]]; then
+        echo "Required bundled Go binary missing: $binary_name" >&2
+        return 1
+    fi
+
+    skip "$binary_name binary not built"
 }
 
 @test "mole --help prints command overview" {
@@ -88,6 +107,42 @@ setup() {
     else
         skip "analyze-go binary not built"
     fi
+}
+
+@test "mole analyze emits JSON lifecycle through bundled binary" {
+    require_jq
+    require_bundled_go_binary "$PROJECT_ROOT/bin/analyze-go" "analyze-go"
+
+    target_dir="$HOME/analyze-target"
+    mkdir -p "$target_dir/subdir"
+    printf 'sample\n' > "$target_dir/file.txt"
+
+    run env HOME="$HOME" MOLE_OUTPUT=json "$PROJECT_ROOT/mole" analyze "$target_dir"
+    [ "$status" -eq 0 ]
+
+    assert_ndjson_envelope "$output"
+    assert_first_event "$output" "operation_start"
+    assert_event_present "$output" "analyze_start"
+    assert_event_present "$output" "analyze_complete"
+    assert_last_event "$output" "operation_complete"
+    [[ "$(printf '%s\n' "$output" | jq -r 'select(.event == "analyze_start") | .data.target_path' | tail -n 1)" == "$target_dir" ]]
+}
+
+@test "mole status emits snapshot and canceled lifecycle through bundled binary" {
+    require_jq
+    require_bundled_go_binary "$PROJECT_ROOT/bin/status-go" "status-go"
+
+    run env HOME="$HOME" MOLE_OUTPUT=json MOLE_STATUS_TEST_SIGNAL=INT MOLE_STATUS_TEST_SIGNAL_DELAY_MS=1200 "$PROJECT_ROOT/mole" status
+    [ "$status" -eq 130 ]
+
+    assert_ndjson_envelope "$output"
+    assert_first_event "$output" "operation_start"
+    assert_event_present "$output" "status_start"
+    assert_event_present "$output" "status_snapshot"
+    assert_event_present "$output" "status_complete"
+    assert_last_event "$output" "operation_complete"
+    [[ "$(printf '%s\n' "$output" | jq -r 'select(.event == "operation_complete") | .data.canceled' | tail -n 1)" == "true" ]]
+    [[ "$(printf '%s\n' "$output" | jq -r 'select(.event == "operation_complete") | .data.exit_code' | tail -n 1)" == "130" ]]
 }
 
 @test "mo clean --debug creates debug log file" {
