@@ -76,6 +76,9 @@ decode_file_list() {
 stop_launch_services() {
     local bundle_id="$1"
     local has_system_files="${2:-false}"
+    local user_launch_agents_dir="${MOLE_UNINSTALL_USER_LAUNCHAGENTS_DIR:-$HOME/Library/LaunchAgents}"
+    local system_launch_agents_dir="${MOLE_UNINSTALL_SYSTEM_LAUNCHAGENTS_DIR:-/Library/LaunchAgents}"
+    local system_launch_daemons_dir="${MOLE_UNINSTALL_SYSTEM_LAUNCHDAEMONS_DIR:-/Library/LaunchDaemons}"
 
     [[ -z "$bundle_id" || "$bundle_id" == "unknown" ]] && return 0
 
@@ -86,22 +89,22 @@ stop_launch_services() {
         return 0
     fi
 
-    if [[ -d ~/Library/LaunchAgents ]]; then
+    if [[ -d "$user_launch_agents_dir" ]]; then
         while IFS= read -r -d '' plist; do
             launchctl unload "$plist" 2> /dev/null || true
-        done < <(find ~/Library/LaunchAgents -maxdepth 1 -name "${bundle_id}*.plist" -print0 2> /dev/null)
+        done < <(find "$user_launch_agents_dir" -maxdepth 1 -name "${bundle_id}*.plist" -print0 2> /dev/null)
     fi
 
     if [[ "$has_system_files" == "true" ]]; then
-        if [[ -d /Library/LaunchAgents ]]; then
+        if [[ -d "$system_launch_agents_dir" ]]; then
             while IFS= read -r -d '' plist; do
-                sudo launchctl unload "$plist" 2> /dev/null || true
-            done < <(find /Library/LaunchAgents -maxdepth 1 -name "${bundle_id}*.plist" -print0 2> /dev/null)
+                sudo -n launchctl unload "$plist" 2> /dev/null || true
+            done < <(find "$system_launch_agents_dir" -maxdepth 1 -name "${bundle_id}*.plist" -print0 2> /dev/null)
         fi
-        if [[ -d /Library/LaunchDaemons ]]; then
+        if [[ -d "$system_launch_daemons_dir" ]]; then
             while IFS= read -r -d '' plist; do
-                sudo launchctl unload "$plist" 2> /dev/null || true
-            done < <(find /Library/LaunchDaemons -maxdepth 1 -name "${bundle_id}*.plist" -print0 2> /dev/null)
+                sudo -n launchctl unload "$plist" 2> /dev/null || true
+            done < <(find "$system_launch_daemons_dir" -maxdepth 1 -name "${bundle_id}*.plist" -print0 2> /dev/null)
         fi
     fi
 }

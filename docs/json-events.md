@@ -176,6 +176,7 @@ Scan mode (`--json-scan`):
 Apply mode (`--apply <manifest>`):
 - `app_removed`: `{ "bundle_id": "...", "path": "...", "size_bytes": 123? }`
 - `leftover_removed|leftover_skipped|leftover_failed` (optional; same shape as clean item events)
+- `summary`: `{ "app_count": n }`
 
 ### 3.4 Optimize (`mo optimize`)
 

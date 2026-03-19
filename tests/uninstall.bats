@@ -222,6 +222,41 @@ EOF
     [ "$status" -eq 0 ]
 }
 
+@test "stop_launch_services uses non-interactive sudo for system files" {
+    mkdir -p "$HOME/fakebin"
+    mkdir -p "$HOME/system-launch-agents"
+    mkdir -p "$HOME/system-launch-daemons"
+
+    touch "$HOME/system-launch-agents/com.example.TestApp.agent.plist"
+    touch "$HOME/system-launch-daemons/com.example.TestApp.daemon.plist"
+
+    cat > "$HOME/fakebin/sudo" <<'EOF'
+#!/bin/bash
+set -euo pipefail
+echo "$*" >> "$HOME/sudo.log"
+if [[ "${1:-}" != "-n" ]]; then
+    exit 99
+fi
+exit 0
+EOF
+    chmod +x "$HOME/fakebin/sudo"
+
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" \
+        PATH="$HOME/fakebin:/usr/bin:/bin" \
+        MOLE_UNINSTALL_SYSTEM_LAUNCHAGENTS_DIR="$HOME/system-launch-agents" \
+        MOLE_UNINSTALL_SYSTEM_LAUNCHDAEMONS_DIR="$HOME/system-launch-daemons" \
+        bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/uninstall/batch.sh"
+
+stop_launch_services "com.example.TestApp" "true"
+grep -q -- "^-n " "$HOME/sudo.log"
+EOF
+
+    [ "$status" -eq 0 ]
+}
+
 @test "remove_mole deletes manual binaries and caches" {
     mkdir -p "$HOME/.local/bin"
     touch "$HOME/.local/bin/mole"

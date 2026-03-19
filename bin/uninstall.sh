@@ -19,6 +19,9 @@ source "$SCRIPT_DIR/../lib/ui/menu_paginated.sh"
 source "$SCRIPT_DIR/../lib/ui/app_selector.sh"
 source "$SCRIPT_DIR/../lib/uninstall/batch.sh"
 
+MOLE_JSON_COMMAND_MODE=""
+MOLE_JSON_APPLY_MANIFEST=""
+
 # State
 selected_apps=()
 declare -a apps_data=()
@@ -26,6 +29,214 @@ declare -a selection_state=()
 total_items=0
 files_cleaned=0
 total_size_cleaned=0
+
+json_mode_setup_stdio() {
+    # Keep stdout clean for NDJSON by routing all non-JSON output to stderr.
+    exec 3>&1 1>&2
+    export MOLE_JSON_OUT_FD=3
+}
+
+maybe_trigger_uninstall_json_test_signal() {
+    if [[ "${MOLE_TEST_MODE:-0}" != "1" ]]; then
+        return 0
+    fi
+
+    local signal_name="${MOLE_UNINSTALL_TEST_SIGNAL:-}"
+    [[ -z "$signal_name" ]] && return 0
+
+    kill -s "$signal_name" "$$" 2> /dev/null || true
+}
+
+uninstall_json_scan() {
+    local tmp_list
+    tmp_list=$(mktemp_file "mole_uninstall_scan")
+
+    local -a app_dirs=()
+    if [[ -n "${MOLE_UNINSTALL_APP_DIRS:-}" ]]; then
+        local IFS=':'
+        # shellcheck disable=SC2206 # intentional word splitting on :
+        app_dirs=(${MOLE_UNINSTALL_APP_DIRS})
+    else
+        app_dirs=(
+            "/Applications"
+            "$HOME/Applications"
+            "/Library/Input Methods"
+            "$HOME/Library/Input Methods"
+        )
+    fi
+
+    if [[ -z "${MOLE_UNINSTALL_APP_DIRS:-}" ]]; then
+        local vol_app_dir
+        local nullglob_was_set=0
+        shopt -q nullglob && nullglob_was_set=1
+        shopt -s nullglob
+        for vol_app_dir in /Volumes/*/Applications; do
+            [[ -d "$vol_app_dir" && -r "$vol_app_dir" ]] || continue
+            app_dirs+=("$vol_app_dir")
+        done
+        if [[ $nullglob_was_set -eq 0 ]]; then
+            shopt -u nullglob
+        fi
+    fi
+
+    local app_dir
+    for app_dir in "${app_dirs[@]}"; do
+        [[ -d "$app_dir" ]] || continue
+        command find "$app_dir" -name "*.app" -maxdepth 3 -print0 2> /dev/null |
+            while IFS= read -r -d '' app_path; do
+                [[ -e "$app_path" ]] || continue
+                # Skip nested apps inside another .app bundle.
+                local parent_dir
+                parent_dir=$(dirname "$app_path")
+                if [[ "$parent_dir" == *".app" || "$parent_dir" == *".app/"* ]]; then
+                    continue
+                fi
+                printf '%s\n' "$app_path" >> "$tmp_list"
+            done
+    done
+
+    local uniq_list
+    uniq_list=$(mktemp_file "mole_uninstall_scan_uniq")
+    sort -u "$tmp_list" > "$uniq_list" 2> /dev/null || true
+    rm -f "$tmp_list" 2> /dev/null || true
+
+    local count=0
+    while IFS= read -r app_path; do
+        [[ -z "$app_path" ]] && continue
+        [[ -d "$app_path" ]] || continue
+
+        local name
+        name=$(basename "$app_path" .app)
+
+        local bundle_id="unknown"
+        if [[ -f "$app_path/Contents/Info.plist" ]]; then
+            bundle_id=$(defaults read "$app_path/Contents/Info.plist" CFBundleIdentifier 2> /dev/null || echo "unknown")
+        fi
+
+        local size_kb=0
+        size_kb=$(get_path_size_kb "$app_path" 2> /dev/null || echo "0")
+        [[ ! "$size_kb" =~ ^[0-9]+$ ]] && size_kb=0
+        local size_bytes=$((size_kb * 1024))
+
+        local last_used_epoch=0
+        last_used_epoch=$(get_file_mtime "$app_path" 2> /dev/null || echo "0")
+        [[ ! "$last_used_epoch" =~ ^[0-9]+$ ]] && last_used_epoch=0
+
+        mole_json_emit_event "uninstall" "app_found" \
+            "{\"name\":$(mole_json_quote "$name"),\"bundle_id\":$(mole_json_quote "$bundle_id"),\"path\":$(mole_json_quote "$app_path"),\"size_bytes\":$size_bytes,\"last_used_epoch\":$last_used_epoch}"
+        count=$((count + 1))
+    done < "$uniq_list"
+    rm -f "$uniq_list" 2> /dev/null || true
+
+    mole_json_emit_event "uninstall" "summary" "{\"app_count\":$count}"
+    return 0
+}
+
+uninstall_json_apply() {
+    local manifest="$1"
+    if ! command -v jq > /dev/null 2>&1; then
+        mole_json_emit_error "uninstall" "error" "unknown" "jq is required to parse apply manifests" "" "" "" ""
+        return 2
+    fi
+
+    local schema_version
+    schema_version=$(jq -r '.schema_version // empty' "$manifest" 2> /dev/null || echo "")
+    local op
+    op=$(jq -r '.operation // empty' "$manifest" 2> /dev/null || echo "")
+    if [[ "$schema_version" != "1" || "$op" != "uninstall" ]]; then
+        mole_json_emit_error "uninstall" "error" "unknown" "Invalid manifest (schema_version/operation)" "" "" "" ""
+        return 2
+    fi
+
+    export MOLE_UNINSTALL_MODE=1
+
+    local tmp_apps
+    tmp_apps=$(mktemp_file "mole_uninstall_apply")
+    jq -c '.payload.apps[]?' "$manifest" 2> /dev/null > "$tmp_apps" || true
+
+    local can_sudo=false
+    if sudo -n true 2> /dev/null; then
+        can_sudo=true
+    fi
+
+    local removed_count=0
+    while IFS= read -r app_json; do
+        [[ -z "$app_json" ]] && continue
+        local bundle_id path
+        bundle_id=$(echo "$app_json" | jq -r '.bundle_id // "unknown"' 2> /dev/null || echo "unknown")
+        path=$(echo "$app_json" | jq -r '.path // empty' 2> /dev/null || echo "")
+
+        if [[ -z "$path" ]]; then
+            mole_json_emit_error "uninstall" "error" "unknown" "Missing app path" "" "$bundle_id" "" ""
+            continue
+        fi
+        if [[ ! -e "$path" ]]; then
+            mole_json_emit_error "uninstall" "warning" "not_found" "App not found" "$path" "$bundle_id" "" ""
+            continue
+        fi
+
+        local app_name
+        app_name=$(basename "$path" .app)
+
+        # Collect related/system files into temp files (stdout is redirected in JSON mode).
+        local related_tmp system_tmp
+        related_tmp=$(mktemp_file "mole_uninstall_related")
+        system_tmp=$(mktemp_file "mole_uninstall_system")
+        find_app_files "$bundle_id" "$app_name" > "$related_tmp" 2> /dev/null || true
+        find_app_system_files "$bundle_id" "$app_name" > "$system_tmp" 2> /dev/null || true
+
+        local has_system_files=false
+        if [[ -s "$system_tmp" ]]; then
+            has_system_files=true
+        fi
+
+        stop_launch_services "$bundle_id" "$has_system_files" || true
+        remove_login_item "$app_name" "$bundle_id" || true
+
+        local size_kb=0
+        size_kb=$(get_path_size_kb "$path" 2> /dev/null || echo "0")
+        [[ ! "$size_kb" =~ ^[0-9]+$ ]] && size_kb=0
+        local size_bytes=$((size_kb * 1024))
+
+        local removed_ok=false
+        if safe_remove "$path" true; then
+            removed_ok=true
+        else
+            if [[ "$can_sudo" == "true" ]]; then
+                local ret=0
+                safe_sudo_remove "$path" || ret=$?
+                [[ $ret -eq 0 ]] && removed_ok=true
+            fi
+        fi
+
+        if [[ "$removed_ok" == "true" ]]; then
+            # Remove user-level related files.
+            if [[ -s "$related_tmp" ]]; then
+                remove_file_list "$(cat "$related_tmp")" "false" > /dev/null 2>&1 || true
+            fi
+            # Remove system-level files (best-effort).
+            if [[ -s "$system_tmp" ]]; then
+                if [[ "$can_sudo" == "true" ]]; then
+                    remove_file_list "$(cat "$system_tmp")" "true" > /dev/null 2>&1 || true
+                else
+                    mole_json_emit_error "uninstall" "warning" "auth_failed" "Admin privileges required to remove some system files" "" "$bundle_id" "" ""
+                fi
+            fi
+
+            mole_json_emit_event "uninstall" "app_removed" \
+                "{\"bundle_id\":$(mole_json_quote "$bundle_id"),\"path\":$(mole_json_quote "$path"),\"size_bytes\":$size_bytes}"
+            removed_count=$((removed_count + 1))
+        else
+            mole_json_emit_error "uninstall" "error" "permission_denied" "Failed to remove application" "$path" "$bundle_id" "" ""
+        fi
+
+        rm -f "$related_tmp" "$system_tmp" 2> /dev/null || true
+    done < "$tmp_apps"
+    rm -f "$tmp_apps" 2> /dev/null || true
+
+    mole_json_emit_event "uninstall" "summary" "{\"app_count\":$removed_count}"
+    return 0
+}
 
 # Scan applications and collect information.
 scan_applications() {
@@ -383,6 +594,7 @@ load_applications() {
 
 # Cleanup: restore cursor and kill keepalive.
 cleanup() {
+    local status="${1:-$?}"
     if [[ "${MOLE_ALT_SCREEN_ACTIVE:-}" == "1" ]]; then
         leave_alt_screen
         unset MOLE_ALT_SCREEN_ACTIVE
@@ -395,7 +607,7 @@ cleanup() {
     # Log session end
     log_operation_session_end "uninstall" "${files_cleaned:-0}" "${total_size_cleaned:-0}"
     show_cursor
-    exit "${1:-0}"
+    exit "$status"
 }
 
 trap cleanup EXIT INT TERM
@@ -405,15 +617,106 @@ main() {
     export MOLE_CURRENT_COMMAND="uninstall"
     log_operation_session_start "uninstall"
 
+    local -a orig_argv=("$@")
     local force_rescan=false
+
     # Global flags
-    for arg in "$@"; do
-        case "$arg" in
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
             "--debug")
                 export MO_DEBUG=1
+                shift
+                ;;
+            "--json-scan")
+                MOLE_JSON_COMMAND_MODE="scan"
+                shift
+                ;;
+            "--apply")
+                MOLE_JSON_COMMAND_MODE="apply"
+                MOLE_JSON_APPLY_MANIFEST="${2:-}"
+                if [[ -z "$MOLE_JSON_APPLY_MANIFEST" ]]; then
+                    log_error "--apply requires a manifest path"
+                    exit 2
+                fi
+                shift 2
+                ;;
+            *)
+                shift
                 ;;
         esac
     done
+
+    if [[ -n "${MOLE_JSON_COMMAND_MODE:-}" ]]; then
+        if ! mole_json_enabled; then
+            log_error "JSON contract mode requires MOLE_OUTPUT=json"
+            exit 2
+        fi
+
+        json_mode_setup_stdio
+
+        local start_epoch
+        start_epoch=$(date -u +%s 2> /dev/null || echo "0")
+        local canceled_emitted=0
+
+        emit_uninstall_json_canceled() {
+            local signal_name="$1"
+            local signal_exit="$2"
+
+            if [[ "${canceled_emitted:-0}" -eq 1 ]]; then
+                exit "$signal_exit"
+            fi
+            canceled_emitted=1
+
+            local cancel_epoch
+            cancel_epoch=$(date -u +%s 2> /dev/null || echo "$start_epoch")
+            local cancel_duration_ms=$(((cancel_epoch - start_epoch) * 1000))
+
+            mole_json_emit_error "uninstall" "error" "canceled" "Operation canceled" "" "" "" ""
+            mole_json_emit_operation_complete "uninstall" "false" "true" "$signal_exit" "$cancel_duration_ms" "{}" "{}"
+            exit "$signal_exit"
+        }
+
+        local exit_code=0
+        if [[ "$MOLE_JSON_COMMAND_MODE" == "scan" ]]; then
+            mole_json_emit_operation_start "uninstall" "scan" "true" "$0" "${orig_argv[@]}"
+            trap 'emit_uninstall_json_canceled "INT" 130' INT
+            trap 'emit_uninstall_json_canceled "TERM" 143' TERM
+            maybe_trigger_uninstall_json_test_signal
+            set +e
+            uninstall_json_scan
+            exit_code=$?
+            set -e
+        else
+            mole_json_emit_operation_start "uninstall" "apply" "false" "$0" "${orig_argv[@]}"
+            trap 'emit_uninstall_json_canceled "INT" 130' INT
+            trap 'emit_uninstall_json_canceled "TERM" 143' TERM
+            maybe_trigger_uninstall_json_test_signal
+            local manifest_path="$MOLE_JSON_APPLY_MANIFEST"
+            local tmp_manifest=""
+            if [[ "$manifest_path" == "-" ]]; then
+                tmp_manifest=$(mktemp_file "mole_uninstall_apply")
+                : > "$tmp_manifest"
+                local manifest_line=""
+                while IFS= read -r manifest_line || [[ -n "$manifest_line" ]]; do
+                    printf '%s\n' "$manifest_line" >> "$tmp_manifest"
+                done
+                manifest_path="$tmp_manifest"
+            fi
+            set +e
+            uninstall_json_apply "$manifest_path"
+            exit_code=$?
+            set -e
+            [[ -n "$tmp_manifest" ]] && rm -f "$tmp_manifest" 2> /dev/null || true
+        fi
+        local end_epoch
+        end_epoch=$(date -u +%s 2> /dev/null || echo "$start_epoch")
+        local duration_ms=$(((end_epoch - start_epoch) * 1000))
+
+        local success="true"
+        [[ "$exit_code" -ne 0 ]] && success="false"
+        mole_json_emit_operation_complete "uninstall" "$success" "false" "$exit_code" "$duration_ms" "{}" "{}"
+        exit "$exit_code"
+    fi
 
     local use_inline_loading=false
     if [[ -t 1 && -t 2 ]]; then
