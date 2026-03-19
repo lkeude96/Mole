@@ -179,24 +179,15 @@ EOF
 }
 
 @test "clean_time_machine_failed_backups detects running backup correctly" {
-    if ! command -v tmutil > /dev/null 2>&1; then
-        skip "tmutil not available"
-    fi
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" bash --noprofile --norc << 'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/system.sh"
 
-    local mock_bin="$HOME/bin"
-    mkdir -p "$mock_bin"
-
-    cat > "$mock_bin/tmutil" << 'MOCK_TMUTIL'
-#!/bin/bash
-if [[ "$1" == "status" ]]; then
-    cat << 'TMUTIL_OUTPUT'
-Backup session status:
-{
-    ClientID = "com.apple.backupd";
-    Running = 0;
+tmutil() {
+    return 0
 }
-TMUTIL_OUTPUT
-elif [[ "$1" == "destinationinfo" ]]; then
+run_with_timeout() {
     cat << 'DEST_OUTPUT'
 ====================================================
 Name          : TestBackup
@@ -205,14 +196,8 @@ Mount Point   : /Volumes/TestBackup
 ID            : 12345678-1234-1234-1234-123456789012
 ====================================================
 DEST_OUTPUT
-fi
-MOCK_TMUTIL
-    chmod +x "$mock_bin/tmutil"
-
-    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" PATH="$mock_bin:$PATH" bash --noprofile --norc << 'EOF'
-set -euo pipefail
-source "$PROJECT_ROOT/lib/core/common.sh"
-source "$PROJECT_ROOT/lib/clean/system.sh"
+}
+tm_is_running() { return 1; }
 
 clean_time_machine_failed_backups
 EOF
@@ -222,24 +207,15 @@ EOF
 }
 
 @test "clean_time_machine_failed_backups skips when backup is actually running" {
-    if ! command -v tmutil > /dev/null 2>&1; then
-        skip "tmutil not available"
-    fi
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" bash --noprofile --norc << 'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/system.sh"
 
-    local mock_bin="$HOME/bin"
-    mkdir -p "$mock_bin"
-
-    cat > "$mock_bin/tmutil" << 'MOCK_TMUTIL'
-#!/bin/bash
-if [[ "$1" == "status" ]]; then
-    cat << 'TMUTIL_OUTPUT'
-Backup session status:
-{
-    ClientID = "com.apple.backupd";
-    Running = 1;
+tmutil() {
+    return 0
 }
-TMUTIL_OUTPUT
-elif [[ "$1" == "destinationinfo" ]]; then
+run_with_timeout() {
     cat << 'DEST_OUTPUT'
 ====================================================
 Name          : TestBackup
@@ -248,14 +224,8 @@ Mount Point   : /Volumes/TestBackup
 ID            : 12345678-1234-1234-1234-123456789012
 ====================================================
 DEST_OUTPUT
-fi
-MOCK_TMUTIL
-    chmod +x "$mock_bin/tmutil"
-
-    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" PATH="$mock_bin:$PATH" bash --noprofile --norc << 'EOF'
-set -euo pipefail
-source "$PROJECT_ROOT/lib/core/common.sh"
-source "$PROJECT_ROOT/lib/clean/system.sh"
+}
+tm_is_running() { return 0; }
 
 clean_time_machine_failed_backups
 EOF
@@ -263,5 +233,3 @@ EOF
     [ "$status" -eq 0 ]
     [[ "$output" == *"Time Machine backup in progress, skipping cleanup"* ]]
 }
-
-
