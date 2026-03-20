@@ -40,6 +40,31 @@ func TestRunJSONStatusEmitsSnapshotAndCanceledLifecycle(t *testing.T) {
 	assertStatusEventPresent(t, events, "status_complete")
 	assertStatusEventPresent(t, events, "error")
 
+	snapshot := findStatusEvent(t, events, "status_snapshot")
+	snapshotData, ok := snapshot.Data.(map[string]any)
+	if !ok {
+		t.Fatalf("expected status_snapshot data object, got %T", snapshot.Data)
+	}
+	for _, field := range []string{
+		"health_score_msg",
+		"cpu",
+		"gpu",
+		"memory",
+		"disks",
+		"disk_io",
+		"network",
+		"network_history",
+		"proxy",
+		"batteries",
+		"thermal",
+		"bluetooth_devices",
+		"top_processes",
+	} {
+		if _, exists := snapshotData[field]; !exists {
+			t.Fatalf("expected status_snapshot field %q in %#v", field, snapshotData)
+		}
+	}
+
 	last := events[len(events)-1]
 	assertStatusEvent(t, last, "operation_complete")
 	data, ok := last.Data.(map[string]any)
@@ -101,4 +126,15 @@ func assertStatusEventPresent(t *testing.T, events []ndjsonEvent, expected strin
 		}
 	}
 	t.Fatalf("expected event %q in %#v", expected, events)
+}
+
+func findStatusEvent(t *testing.T, events []ndjsonEvent, expected string) ndjsonEvent {
+	t.Helper()
+	for _, event := range events {
+		if event.Event == expected {
+			return event
+		}
+	}
+	t.Fatalf("expected event %q in %#v", expected, events)
+	return ndjsonEvent{}
 }

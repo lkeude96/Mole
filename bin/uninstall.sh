@@ -47,6 +47,108 @@ maybe_trigger_uninstall_json_test_signal() {
     kill -s "$signal_name" "$$" 2> /dev/null || true
 }
 
+uninstall_json_leftover_kind() {
+    local path="$1"
+
+    case "$path" in
+        "$HOME/Library/Application Support/"* | "/Library/Application Support/"*)
+            echo "application_support"
+            ;;
+        "$HOME/Library/Caches/"* | "/Library/Caches/"*)
+            echo "cache"
+            ;;
+        "$HOME/Library/Logs/"* | "/Library/Logs/"*)
+            echo "log"
+            ;;
+        "$HOME/Library/Saved Application State/"*)
+            echo "saved_state"
+            ;;
+        "$HOME/Library/Containers/"*)
+            echo "container"
+            ;;
+        "$HOME/Library/Group Containers/"*)
+            echo "group_container"
+            ;;
+        "$HOME/Library/Preferences/"* | "/Library/Preferences/"*)
+            echo "preference"
+            ;;
+        "$HOME/Library/LaunchAgents/"* | "/Library/LaunchAgents/"*)
+            echo "launch_agent"
+            ;;
+        "/Library/LaunchDaemons/"*)
+            echo "launch_daemon"
+            ;;
+        "/Library/Receipts/"*)
+            echo "receipt"
+            ;;
+        "$HOME/Library/Application Scripts/"*)
+            echo "application_script"
+            ;;
+        "$HOME/Library/WebKit/"* | "$HOME/Library/HTTPStorages/"* | "$HOME/Library/Cookies/"*)
+            echo "web_data"
+            ;;
+        "$HOME/.config/"*)
+            echo "dot_config"
+            ;;
+        "$HOME/.local/share/"*)
+            echo "local_share"
+            ;;
+        "/Library/PrivilegedHelperTools/"*)
+            echo "privileged_helper"
+            ;;
+        "$HOME/."*)
+            echo "dotfile"
+            ;;
+        *)
+            echo "other"
+            ;;
+    esac
+}
+
+uninstall_json_collect_leftovers() {
+    local bundle_id="$1"
+    local app_name="$2"
+
+    local related_tmp system_tmp combined_tmp
+    related_tmp=$(mktemp_file "mole_uninstall_related")
+    system_tmp=$(mktemp_file "mole_uninstall_system")
+    combined_tmp=$(mktemp_file "mole_uninstall_leftovers")
+
+    find_app_files "$bundle_id" "$app_name" > "$related_tmp" 2> /dev/null || true
+    find_app_system_files "$bundle_id" "$app_name" > "$system_tmp" 2> /dev/null || true
+
+    {
+        cat "$related_tmp" 2> /dev/null || true
+        cat "$system_tmp" 2> /dev/null || true
+    } | awk 'NF { print }' | sort -u > "$combined_tmp" 2> /dev/null || true
+
+    local -a normalized_paths=()
+    local normalized_count=0
+    while IFS= read -r candidate_path; do
+        [[ -n "$candidate_path" ]] || continue
+
+        local is_child=false
+        local kept_path
+        if [[ "$normalized_count" -gt 0 ]]; then
+            for kept_path in "${normalized_paths[@]}"; do
+                if [[ "$candidate_path" == "$kept_path" || "$candidate_path" == "$kept_path"/* ]]; then
+                    is_child=true
+                    break
+                fi
+            done
+        fi
+
+        if [[ "$is_child" != "true" ]]; then
+            normalized_paths+=("$candidate_path")
+            normalized_count=$((normalized_count + 1))
+        fi
+    done < <(awk '{ print length "|" $0 }' "$combined_tmp" | LC_ALL=C sort -n | cut -d'|' -f2-)
+
+    if [[ "$normalized_count" -gt 0 ]]; then
+        printf '%s\n' "${normalized_paths[@]}"
+    fi
+}
+
 uninstall_json_scan() {
     local tmp_list
     tmp_list=$(mktemp_file "mole_uninstall_scan")
@@ -101,6 +203,8 @@ uninstall_json_scan() {
     rm -f "$tmp_list" 2> /dev/null || true
 
     local count=0
+    local leftover_count=0
+    local leftover_size_bytes=0
     while IFS= read -r app_path; do
         [[ -z "$app_path" ]] && continue
         [[ -d "$app_path" ]] || continue
@@ -125,10 +229,26 @@ uninstall_json_scan() {
         mole_json_emit_event "uninstall" "app_found" \
             "{\"name\":$(mole_json_quote "$name"),\"bundle_id\":$(mole_json_quote "$bundle_id"),\"path\":$(mole_json_quote "$app_path"),\"size_bytes\":$size_bytes,\"last_used_epoch\":$last_used_epoch}"
         count=$((count + 1))
+
+        while IFS= read -r leftover_path; do
+            [[ -n "$leftover_path" && -e "$leftover_path" ]] || continue
+
+            local leftover_size_kb=0
+            leftover_size_kb=$(get_path_size_kb "$leftover_path" 2> /dev/null || echo "0")
+            [[ ! "$leftover_size_kb" =~ ^[0-9]+$ ]] && leftover_size_kb=0
+            local leftover_path_size_bytes=$((leftover_size_kb * 1024))
+            local leftover_kind
+            leftover_kind=$(uninstall_json_leftover_kind "$leftover_path")
+
+            mole_json_emit_event "uninstall" "leftover_found" \
+                "{\"bundle_id\":$(mole_json_quote "$bundle_id"),\"path\":$(mole_json_quote "$leftover_path"),\"kind\":$(mole_json_quote "$leftover_kind"),\"size_bytes\":$leftover_path_size_bytes}"
+            leftover_count=$((leftover_count + 1))
+            leftover_size_bytes=$((leftover_size_bytes + leftover_path_size_bytes))
+        done < <(uninstall_json_collect_leftovers "$bundle_id" "$name")
     done < "$uniq_list"
     rm -f "$uniq_list" 2> /dev/null || true
 
-    mole_json_emit_event "uninstall" "summary" "{\"app_count\":$count}"
+    mole_json_emit_event "uninstall" "summary" "{\"app_count\":$count,\"leftover_count\":$leftover_count,\"leftover_size_bytes\":$leftover_size_bytes}"
     return 0
 }
 
@@ -210,22 +330,89 @@ uninstall_json_apply() {
         fi
 
         if [[ "$removed_ok" == "true" ]]; then
-            # Remove user-level related files.
-            if [[ -s "$related_tmp" ]]; then
-                remove_file_list "$(cat "$related_tmp")" "false" > /dev/null 2>&1 || true
-            fi
-            # Remove system-level files (best-effort).
-            if [[ -s "$system_tmp" ]]; then
-                if [[ "$can_sudo" == "true" ]]; then
-                    remove_file_list "$(cat "$system_tmp")" "true" > /dev/null 2>&1 || true
-                else
-                    mole_json_emit_error "uninstall" "warning" "auth_failed" "Admin privileges required to remove some system files" "" "$bundle_id" "" ""
-                fi
-            fi
-
             mole_json_emit_event "uninstall" "app_removed" \
                 "{\"bundle_id\":$(mole_json_quote "$bundle_id"),\"path\":$(mole_json_quote "$path"),\"size_bytes\":$size_bytes}"
             removed_count=$((removed_count + 1))
+
+            while IFS= read -r leftover_path; do
+                [[ -n "$leftover_path" ]] || continue
+
+                local leftover_kind
+                leftover_kind=$(uninstall_json_leftover_kind "$leftover_path")
+
+                if [[ ! -e "$leftover_path" ]]; then
+                    mole_json_emit_event "uninstall" "leftover_skipped" \
+                        "{\"bundle_id\":$(mole_json_quote "$bundle_id"),\"path\":$(mole_json_quote "$leftover_path"),\"kind\":$(mole_json_quote "$leftover_kind"),\"reason\":\"missing\"}"
+                    continue
+                fi
+
+                local leftover_size_kb=0
+                leftover_size_kb=$(get_path_size_kb "$leftover_path" 2> /dev/null || echo "0")
+                [[ ! "$leftover_size_kb" =~ ^[0-9]+$ ]] && leftover_size_kb=0
+                local leftover_path_size_bytes=$((leftover_size_kb * 1024))
+                local use_sudo=false
+                local remove_exit=0
+
+                if grep -Fxq "$leftover_path" "$system_tmp" 2> /dev/null; then
+                    use_sudo=true
+                fi
+
+                if [[ "$use_sudo" == "true" && "$can_sudo" != "true" ]]; then
+                    mole_json_emit_event "uninstall" "leftover_skipped" \
+                        "{\"bundle_id\":$(mole_json_quote "$bundle_id"),\"path\":$(mole_json_quote "$leftover_path"),\"kind\":$(mole_json_quote "$leftover_kind"),\"reason\":\"auth_failed\"}"
+                    continue
+                fi
+
+                if [[ "$use_sudo" == "true" ]]; then
+                    safe_sudo_remove "$leftover_path" || remove_exit=$?
+                else
+                    safe_remove "$leftover_path" true || remove_exit=$?
+                fi
+
+                if [[ "$remove_exit" -eq 0 ]]; then
+                    mole_json_emit_event "uninstall" "leftover_removed" \
+                        "{\"bundle_id\":$(mole_json_quote "$bundle_id"),\"path\":$(mole_json_quote "$leftover_path"),\"kind\":$(mole_json_quote "$leftover_kind"),\"size_bytes\":$leftover_path_size_bytes}"
+                    continue
+                fi
+
+                local reason="${MOLE_LAST_REMOVE_ERROR:-unknown}"
+                local message=""
+                case "$reason" in
+                    permission_denied)
+                        message="Permission denied"
+                        ;;
+                    in_use)
+                        message="Resource is in use"
+                        ;;
+                    *)
+                        if [[ "$use_sudo" == "true" ]]; then
+                            local sudo_error_details
+                            sudo_error_details=$(describe_sudo_remove_error "$remove_exit" "$app_name" 2> /dev/null || echo "unknown|")
+                            reason="${sudo_error_details%%|*}"
+                            message="${sudo_error_details#*|}"
+                            case "$remove_exit" in
+                                "$MOLE_ERR_SIP_PROTECTED")
+                                    reason="sip_protected"
+                                    ;;
+                                "$MOLE_ERR_AUTH_FAILED")
+                                    reason="auth_failed"
+                                    ;;
+                                "$MOLE_ERR_READONLY_FS")
+                                    reason="readonly_filesystem"
+                                    ;;
+                                *)
+                                    [[ -n "$reason" && "$reason" != "$sudo_error_details" ]] || reason="unknown"
+                                    ;;
+                            esac
+                        else
+                            message="Failed to remove leftover"
+                        fi
+                        ;;
+                esac
+
+                mole_json_emit_event "uninstall" "leftover_failed" \
+                    "{\"bundle_id\":$(mole_json_quote "$bundle_id"),\"path\":$(mole_json_quote "$leftover_path"),\"kind\":$(mole_json_quote "$leftover_kind"),\"reason\":$(mole_json_quote "$reason"),\"message\":$(mole_json_quote "$message")}"
+            done < <(uninstall_json_collect_leftovers "$bundle_id" "$app_name")
         else
             mole_json_emit_error "uninstall" "error" "permission_denied" "Failed to remove application" "$path" "$bundle_id" "" ""
         fi

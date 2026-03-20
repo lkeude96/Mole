@@ -50,15 +50,37 @@ json_mode_emit_summary() {
         "{\"installer_count\":$count,\"total_size_bytes\":$size_bytes}"
 }
 
+installer_mtime_rfc3339() {
+    local mtime="${1:-0}"
+    if [[ ! "$mtime" =~ ^[0-9]+$ || "$mtime" -le 0 ]]; then
+        printf '1970-01-01T00:00:00Z'
+        return 0
+    fi
+
+    "$_DATE_CMD" -u -r "$mtime" +%Y-%m-%dT%H:%M:%SZ 2> /dev/null || printf '1970-01-01T00:00:00Z'
+}
+
 json_scan_installers() {
     local total_count=0
     local total_size=0
+    local current_epoch=0
+    current_epoch=$(get_epoch_seconds)
+    [[ ! "$current_epoch" =~ ^[0-9]+$ ]] && current_epoch=0
 
     while IFS= read -r file; do
         [[ -z "$file" ]] && continue
         local size=0
         size=$(get_file_size "$file" 2> /dev/null || echo "0")
         [[ ! "$size" =~ ^[0-9]+$ ]] && size=0
+        local mtime=0
+        mtime=$(get_file_mtime "$file" 2> /dev/null || echo "0")
+        [[ ! "$mtime" =~ ^[0-9]+$ ]] && mtime=0
+        local modified_at
+        modified_at=$(installer_mtime_rfc3339 "$mtime")
+        local age_days=0
+        if [[ "$mtime" -gt 0 && "$current_epoch" -ge "$mtime" ]]; then
+            age_days=$(((current_epoch - mtime) / 86400))
+        fi
         local source
         source=$(get_source_display "$file")
 
@@ -71,7 +93,7 @@ json_scan_installers() {
         fi
 
         mole_json_emit_event "installer" "installer_found" \
-            "{\"path\":$(mole_json_quote "$file"),\"display_name\":$(mole_json_quote "$display_name"),\"source\":$(mole_json_quote "$source"),\"size_bytes\":$size}"
+            "{\"path\":$(mole_json_quote "$file"),\"display_name\":$(mole_json_quote "$display_name"),\"source\":$(mole_json_quote "$source"),\"size_bytes\":$size,\"modified_at\":$(mole_json_quote "$modified_at"),\"age_days\":$age_days}"
 
         total_size=$((total_size + size))
         total_count=$((total_count + 1))

@@ -171,11 +171,14 @@ Apply mode (`--apply <manifest>`):
 
 Scan mode (`--json-scan`):
 - `app_found`: `{ "name": "Slack", "bundle_id": "...", "path": "...", "size_bytes": 123, "last_used_epoch": 1700000000?, "last_used_label": "Today|..."? }`
-- `summary`: `{ "app_count": n }`
+- `leftover_found`: `{ "bundle_id": "...", "path": "...", "kind": "application_support|cache|log|saved_state|container|group_container|preference|launch_agent|launch_daemon|receipt|application_script|web_data|dot_config|local_share|privileged_helper|dotfile|other", "size_bytes": 123? }`
+- `summary`: `{ "app_count": n, "leftover_count": m?, "leftover_size_bytes": b? }`
 
 Apply mode (`--apply <manifest>`):
 - `app_removed`: `{ "bundle_id": "...", "path": "...", "size_bytes": 123? }`
-- `leftover_removed|leftover_skipped|leftover_failed` (optional; same shape as clean item events)
+- `leftover_removed`: `{ "bundle_id": "...", "path": "...", "kind": "...", "size_bytes": 123 }`
+- `leftover_skipped`: `{ "bundle_id": "...", "path": "...", "kind": "...", "reason": "missing|auth_failed|permission_denied|in_use|unknown" }`
+- `leftover_failed`: `{ "bundle_id": "...", "path": "...", "kind": "...", "reason": "auth_failed|permission_denied|in_use|sip_protected|readonly_filesystem|unknown", "message": "..."? }`
 - `summary`: `{ "app_count": n }`
 
 ### 3.4 Optimize (`mo optimize`)
@@ -201,7 +204,7 @@ Apply mode (`--apply <manifest>`):
 ### 3.6 Installer (`mo installer`)
 
 Scan mode (`--json-scan`):
-- `installer_found`: `{ "path": "/.../file.dmg", "display_name": "file.dmg", "source": "Downloads|Desktop|Homebrew|...", "size_bytes": 123 }`
+- `installer_found`: `{ "path": "/.../file.dmg", "display_name": "file.dmg", "source": "Downloads|Desktop|Homebrew|...", "size_bytes": 123, "modified_at": "2026-02-03T18:22:11Z", "age_days": 14 }`
 - `summary`: `{ "installer_count": n, "total_size_bytes": m }`
 
 Apply mode (`--apply <manifest>`):
@@ -224,7 +227,8 @@ JSON mode is always “scan” (no apply in v1):
 
 Stream mode:
 - `status_start`: `{ "interval_ms": 1000, "host": "...", "platform": "...", "hardware": {...} }`
-- `status_snapshot`: `{ "collected_at": "...", "health_score": 92, "cpu": {...}, "memory": {...}, "disks": [...], "network": [...], "top_processes": [...] }`
+- `status_snapshot`:
+  `{ "collected_at": "...", "health_score": 92, "health_score_msg": "...", "cpu": {...}, "gpu": [...], "memory": {...}, "disks": [...], "disk_io": {...}, "network": [...], "network_history": {...}, "proxy": {...}, "batteries": [...], "thermal": {...}, "bluetooth_devices": [...], "top_processes": [...] }`
 - `status_complete` (optional) on graceful stop
 
 ## 4. Ordering and Termination Rules

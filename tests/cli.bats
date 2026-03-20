@@ -68,6 +68,73 @@ require_bundled_go_binary() {
     skip "$binary_name binary not built"
 }
 
+require_top_level_uninstall_dispatch() {
+    if [[ "${MOLE_REQUIRE_TOPLEVEL_UNINSTALL_DISPATCH:-0}" == "1" ]]; then
+        return 0
+    fi
+
+    skip "top-level uninstall dispatch smoke is CI-only"
+}
+
+run_with_timeout_capture() {
+    local timeout_seconds="$1"
+    shift
+
+    local output_file
+    local status_file
+    output_file="$(mktemp "${BATS_TEST_DIRNAME}/tmp-cli-output.XXXXXX")"
+    status_file="$(mktemp "${BATS_TEST_DIRNAME}/tmp-cli-status.XXXXXX")"
+
+    (
+        set +e
+        "$@" > "$output_file" 2>&1
+        printf '%s' "$?" > "$status_file"
+    ) &
+    local cmd_pid=$!
+
+    local elapsed=0
+    while kill -0 "$cmd_pid" 2> /dev/null; do
+        if [[ "$elapsed" -ge "$timeout_seconds" ]]; then
+            kill -TERM "$cmd_pid" 2> /dev/null || true
+            sleep 1
+            kill -KILL "$cmd_pid" 2> /dev/null || true
+            wait "$cmd_pid" 2> /dev/null || true
+
+            output="$(cat "$output_file")"
+            status=124
+            rm -f "$output_file" "$status_file"
+            return 0
+        fi
+
+        sleep 1
+        elapsed=$((elapsed + 1))
+    done
+
+    wait "$cmd_pid" 2> /dev/null || true
+    output="$(cat "$output_file")"
+    if [[ -f "$status_file" && -s "$status_file" ]]; then
+        status="$(cat "$status_file")"
+    else
+        status=1
+    fi
+
+    rm -f "$output_file" "$status_file"
+}
+
+create_uninstall_test_app() {
+    mkdir -p "$HOME/Applications/TestApp.app/Contents"
+    cat > "$HOME/Applications/TestApp.app/Contents/Info.plist" <<'EOF'
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>CFBundleIdentifier</key>
+  <string>com.example.testapp</string>
+</dict>
+</plist>
+EOF
+}
+
 @test "mole --help prints command overview" {
     run env HOME="$HOME" "$PROJECT_ROOT/mole" --help
     [ "$status" -eq 0 ]
@@ -143,6 +210,52 @@ require_bundled_go_binary() {
     assert_last_event "$output" "operation_complete"
     [[ "$(printf '%s\n' "$output" | jq -r 'select(.event == "operation_complete") | .data.canceled' | tail -n 1)" == "true" ]]
     [[ "$(printf '%s\n' "$output" | jq -r 'select(.event == "operation_complete") | .data.exit_code' | tail -n 1)" == "130" ]]
+}
+
+@test "mole uninstall --json-scan dispatches through top-level wrapper" {
+    require_jq
+    require_top_level_uninstall_dispatch
+
+    create_uninstall_test_app
+
+    run_with_timeout_capture 15 env HOME="$HOME" MOLE_OUTPUT=json MOLE_UNINSTALL_APP_DIRS="$HOME/Applications" \
+        "$PROJECT_ROOT/mole" uninstall --json-scan
+    [ "$status" -eq 0 ]
+
+    assert_ndjson_envelope "$output"
+    assert_first_event "$output" "operation_start"
+    assert_event_present "$output" "app_found"
+    assert_event_present "$output" "summary"
+    assert_last_event "$output" "operation_complete"
+}
+
+@test "mole uninstall --apply dispatches through top-level wrapper" {
+    require_jq
+    require_top_level_uninstall_dispatch
+
+    create_uninstall_test_app
+    manifest="$HOME/uninstall-wrapper-apply.json"
+    cat > "$manifest" <<EOF
+{
+  "schema_version": 1,
+  "operation": "uninstall",
+  "payload": {
+    "apps": [
+      { "bundle_id": "com.example.testapp", "path": "$HOME/Applications/TestApp.app" }
+    ]
+  }
+}
+EOF
+
+    run_with_timeout_capture 15 env HOME="$HOME" MOLE_OUTPUT=json \
+        "$PROJECT_ROOT/mole" uninstall --apply "$manifest"
+    [ "$status" -eq 0 ]
+
+    assert_ndjson_envelope "$output"
+    assert_first_event "$output" "operation_start"
+    assert_event_present "$output" "app_removed"
+    assert_event_present "$output" "summary"
+    assert_last_event "$output" "operation_complete"
 }
 
 @test "mo clean --debug creates debug log file" {

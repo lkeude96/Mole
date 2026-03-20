@@ -27,6 +27,7 @@ jobs:
           BATS_FORMATTER: tap
           LANG: en_US.UTF-8
           LC_ALL: en_US.UTF-8
+          MOLE_REQUIRE_TOPLEVEL_UNINSTALL_DISPATCH: 1
         shell: bash
         run: |
           set -euo pipefail

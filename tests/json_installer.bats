@@ -37,6 +37,31 @@ teardown_file() {
     assert_last_event "$output" "operation_complete"
 }
 
+@test "installer json_scan_installers emits modified_at and age_days" {
+    require_jq
+
+    target="$HOME/Downloads/Test Installer.dmg"
+    touch "$target"
+    touch -t 202001010101 "$target"
+
+    run env HOME="$HOME" MOLE_OUTPUT=json MOLE_TEST_MODE=1 \
+        bash --noprofile --norc -c '
+            project_root="$1"
+            target_path="$2"
+            source "$project_root/bin/installer.sh"
+            scan_all_installers() {
+                printf "%s\n" "$target_path"
+            }
+            json_scan_installers
+        ' bash "$PROJECT_ROOT" "$target"
+    [ "$status" -eq 0 ]
+
+    installer_found="$(printf '%s\n' "$output" | jq -c 'select(.event=="installer_found" and .data.display_name=="Test Installer.dmg")' | head -n 1)"
+    [ -n "$installer_found" ]
+    [[ "$(printf '%s\n' "$installer_found" | jq -r '.data.modified_at')" =~ Z$ ]]
+    [[ "$(printf '%s\n' "$installer_found" | jq -r '.data.age_days')" =~ ^[0-9]+$ ]]
+}
+
 @test "installer --apply reads manifest from stdin and removes selected installer" {
     require_jq
 
