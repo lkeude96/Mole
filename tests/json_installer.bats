@@ -45,15 +45,15 @@ teardown_file() {
     touch -t 202001010101 "$target"
 
     run env HOME="$HOME" MOLE_OUTPUT=json MOLE_TEST_MODE=1 \
-        bash --noprofile --norc -c '
-            project_root="$1"
-            target_path="$2"
-            source "$project_root/bin/installer.sh"
-            scan_all_installers() {
-                printf "%s\n" "$target_path"
-            }
-            json_scan_installers
-        ' bash "$PROJECT_ROOT" "$target"
+        bash --noprofile --norc -s -- "$PROJECT_ROOT" "$target" <<'EOF'
+project_root="$1"
+target_path="$2"
+source "$project_root/bin/installer.sh"
+scan_all_installers() {
+    printf '%s\n' "$target_path"
+}
+json_scan_installers
+EOF
     [ "$status" -eq 0 ]
 
     installer_found="$(printf '%s\n' "$output" | jq -c 'select(.event=="installer_found" and .data.display_name=="Test Installer.dmg")' | head -n 1)"
