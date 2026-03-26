@@ -230,6 +230,9 @@ func (c *Collector) Collect() (MetricsSnapshot, error) {
 
 	// Host info is cached by gopsutil; fetch once.
 	hostInfo, _ := host.Info()
+	if hostInfo == nil {
+		hostInfo = &host.InfoStat{}
+	}
 
 	var (
 		wg       sync.WaitGroup
@@ -250,19 +253,31 @@ func (c *Collector) Collect() (MetricsSnapshot, error) {
 		topProcs     []ProcessInfo
 	)
 
+	mergeCollectErr := func(err error) {
+		if err == nil {
+			return
+		}
+		errMu.Lock()
+		if mergeErr == nil {
+			mergeErr = err
+		} else {
+			mergeErr = fmt.Errorf("%v; %w", mergeErr, err)
+		}
+		errMu.Unlock()
+	}
+
 	// Helper to launch concurrent collection.
 	collect := func(fn func() error) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			if err := fn(); err != nil {
-				errMu.Lock()
-				if mergeErr == nil {
-					mergeErr = err
-				} else {
-					mergeErr = fmt.Errorf("%v; %w", mergeErr, err)
+			defer func() {
+				if r := recover(); r != nil {
+					mergeCollectErr(fmt.Errorf("metric collection panicked: %v", r))
 				}
-				errMu.Unlock()
+			}()
+			if err := fn(); err != nil {
+				mergeCollectErr(err)
 			}
 		}()
 	}

@@ -191,6 +191,11 @@ Apply mode (`--apply <manifest>`):
 - `optimization_start`: `{ "action": "...", "name": "..." }`
 - `optimization_complete`: `{ "action": "...", "success": true, "message": "..."? }`
 
+Notes:
+- Scan mode reports task discovery only.
+- Apply mode reports per-task lifecycle transitions.
+- v1 does not guarantee determinate overall percent complete, elapsed/remaining estimates, or richer task metadata beyond the documented fields.
+
 ### 3.5 Purge (`mo purge`)
 
 Scan mode (`--json-scan`):
@@ -200,6 +205,11 @@ Scan mode (`--json-scan`):
 
 Apply mode (`--apply <manifest>`):
 - `artifact_removed|artifact_skipped|artifact_failed` (same shape as clean item events)
+
+Notes:
+- Scan mode reports search roots plus discovered artifacts.
+- Burrow should derive grouping, tallies, and per-artifact presentation from `purge_path`, `artifact_found`, and `summary`.
+- v1 does not guarantee percentage-complete scan progress or ETA.
 
 ### 3.6 Installer (`mo installer`)
 
@@ -223,6 +233,11 @@ JSON mode is always “scan” (no apply in v1):
 - `analyze_complete`:
   `{ "target_path": "...", "total_size_bytes": n, "entry_count": n, "large_file_count": n }`
 
+Notes:
+- `analyze_progress` is a coarse scan counter for the current target path.
+- `analyze_entry` and `analyze_large_file` are emitted after the scan result for the current target has been assembled.
+- Burrow v1 should treat Analyze as a post-scan, target-scoped visualization rather than a progressively filling live hierarchy.
+
 ### 3.8 Status (`mo status`)
 
 Stream mode:
@@ -230,6 +245,12 @@ Stream mode:
 - `status_snapshot`:
   `{ "collected_at": "...", "health_score": 92, "health_score_msg": "...", "cpu": {...}, "gpu": [...], "memory": {...}, "disks": [...], "disk_io": {...}, "network": [...], "network_history": {...}, "proxy": {...}, "batteries": [...], "thermal": {...}, "bluetooth_devices": [...], "top_processes": [...] }`
 - `status_complete` (optional) on graceful stop
+
+Notes:
+- The listed `status_snapshot` keys are the canonical v1 contract for Burrow dashboards and menu bar rendering.
+- When a list-like metric is unavailable, the corresponding field is emitted as an empty array.
+- `network_history` remains an object and uses empty arrays when no samples are available.
+- Object-like metrics remain present as objects even when their values are zeroed or unavailable.
 
 ## 4. Ordering and Termination Rules
 

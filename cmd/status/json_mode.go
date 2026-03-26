@@ -56,23 +56,7 @@ func runJSONStatus() int {
 				})
 			}
 
-			_ = emitter.emit("status_snapshot", map[string]any{
-				"collected_at":      snap.CollectedAt.UTC().Format(time.RFC3339Nano),
-				"health_score":      snap.HealthScore,
-				"health_score_msg":  snap.HealthScoreMsg,
-				"cpu":               snap.CPU,
-				"gpu":               snap.GPU,
-				"memory":            snap.Memory,
-				"disks":             snap.Disks,
-				"disk_io":           snap.DiskIO,
-				"network":           snap.Network,
-				"network_history":   snap.NetworkHistory,
-				"proxy":             snap.Proxy,
-				"batteries":         snap.Batteries,
-				"thermal":           snap.Thermal,
-				"bluetooth_devices": snap.Bluetooth,
-				"top_processes":     snap.TopProcesses,
-			})
+			_ = emitStatusSnapshot(emitter, snap)
 		case sig := <-sigCh:
 			exitCode := 130
 			if sig == syscall.SIGTERM {
@@ -92,6 +76,53 @@ func runJSONStatus() int {
 			return exitCode
 		}
 	}
+}
+
+func emitStatusSnapshot(emitter *jsonEmitter, snapshot MetricsSnapshot) error {
+	return emitter.emit("status_snapshot", statusSnapshotData(snapshot))
+}
+
+func statusSnapshotData(snapshot MetricsSnapshot) map[string]any {
+	snapshot = normalizeStatusSnapshot(snapshot)
+
+	return map[string]any{
+		"collected_at":      snapshot.CollectedAt.UTC().Format(time.RFC3339Nano),
+		"health_score":      snapshot.HealthScore,
+		"health_score_msg":  snapshot.HealthScoreMsg,
+		"cpu":               snapshot.CPU,
+		"gpu":               snapshot.GPU,
+		"memory":            snapshot.Memory,
+		"disks":             snapshot.Disks,
+		"disk_io":           snapshot.DiskIO,
+		"network":           snapshot.Network,
+		"network_history":   snapshot.NetworkHistory,
+		"proxy":             snapshot.Proxy,
+		"batteries":         snapshot.Batteries,
+		"thermal":           snapshot.Thermal,
+		"bluetooth_devices": snapshot.Bluetooth,
+		"top_processes":     snapshot.TopProcesses,
+	}
+}
+
+func normalizeStatusSnapshot(snapshot MetricsSnapshot) MetricsSnapshot {
+	snapshot.GPU = normalizedSlice(snapshot.GPU)
+	snapshot.Disks = normalizedSlice(snapshot.Disks)
+	snapshot.Network = normalizedSlice(snapshot.Network)
+	snapshot.NetworkHistory = NetworkHistory{
+		RxHistory: normalizedSlice(snapshot.NetworkHistory.RxHistory),
+		TxHistory: normalizedSlice(snapshot.NetworkHistory.TxHistory),
+	}
+	snapshot.Batteries = normalizedSlice(snapshot.Batteries)
+	snapshot.Bluetooth = normalizedSlice(snapshot.Bluetooth)
+	snapshot.TopProcesses = normalizedSlice(snapshot.TopProcesses)
+	return snapshot
+}
+
+func normalizedSlice[T any](values []T) []T {
+	if values == nil {
+		return []T{}
+	}
+	return values
 }
 
 func maybeTriggerStatusJSONTestSignal() {
